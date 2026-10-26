@@ -131,6 +131,28 @@ export async function getLease(ctx: ServiceCtx, leaseId: string, asOf: Date = ne
   return { lease: serializeLease(lease), invoices, payments: paymentRows.map(serializePayment) }
 }
 
+export type LeaseFormOptions = {
+  units: { id: string; name: string }[]
+  tenants: { id: string; fullName: string; email: string }[]
+}
+
+// Pickers for the create-lease form (R46/R56): manager only, like createLease; scoped to the caller's org.
+export async function leaseFormOptions(ctx: ServiceCtx): Promise<LeaseFormOptions> {
+  const { orgId } = requireMember(await loadCaller(ctx.userId), ['manager'])
+  const [units, tenants] = await Promise.all([
+    prisma.units.findMany({ where: { org_id: orgId }, select: { id: true, name: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }] }),
+    prisma.tenants.findMany({
+      where: { org_id: orgId },
+      select: { id: true, full_name: true, email: true },
+      orderBy: [{ full_name: 'asc' }, { id: 'asc' }],
+    }),
+  ])
+  return {
+    units,
+    tenants: tenants.map((t) => ({ id: t.id, fullName: t.full_name, email: t.email })),
+  }
+}
+
 export type LeaseListItem = LeaseDto & { unitName: string; tenantName: string }
 
 // Leases list for the UI: staff/manager see their org's leases; a tenant sees only their own.

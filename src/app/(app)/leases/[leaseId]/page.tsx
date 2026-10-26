@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { PaymentActions } from "@/components/staff/payment-actions";
 import { RecordPaymentForm } from "@/components/staff/record-payment-form";
-import { StaffNav } from "@/components/staff/staff-nav";
 import { ViewSlipButton } from "@/components/staff/view-slip-button";
 import {
   InvoiceStatusBadge,
@@ -63,7 +62,6 @@ export default async function LeasePage({ params }: { params: Promise<{ leaseId:
 
   return (
     <>
-      <StaffNav active="/leases" />
       <div className="mb-6">
         <Link href="/leases" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
           Back to leases

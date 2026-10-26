@@ -2,8 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LeaseListSkeleton } from "@/components/staff/skeletons";
-import { StaffNav } from "@/components/staff/staff-nav";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -38,27 +37,33 @@ export default async function LeasesPage({
   const q = (Array.isArray(rawQ) ? rawQ[0] : rawQ)?.trim() ?? "";
   return (
     <>
-      <StaffNav active="/leases" />
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Leases</h1>
-        <form action="/leases" method="get" role="search" className="flex gap-2">
-          <Input
-            name="q"
-            type="search"
-            defaultValue={q}
-            placeholder="Search unit or tenant"
-            aria-label="Search by unit or tenant"
-            className="w-64"
-          />
-          <Button type="submit" variant="outline">
-            Search
-          </Button>
-          {q !== "" && (
-            <Link href="/leases" className="inline-flex items-center px-2 text-sm text-muted-foreground hover:text-foreground">
-              Clear
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <form action="/leases" method="get" role="search" className="flex gap-2">
+            <Input
+              name="q"
+              type="search"
+              defaultValue={q}
+              placeholder="Search unit or tenant"
+              aria-label="Search by unit or tenant"
+              className="w-64"
+            />
+            <Button type="submit" variant="outline">
+              Search
+            </Button>
+            {q !== "" && (
+              <Link href="/leases" className="inline-flex items-center px-2 text-sm text-muted-foreground hover:text-foreground">
+                Clear
+              </Link>
+            )}
+          </form>
+          {caller.member.role === "manager" && (
+            <Link href="/leases/new" className={buttonVariants()}>
+              New lease
             </Link>
           )}
-        </form>
+        </div>
       </div>
 
       <Suspense key={q} fallback={<LeaseListSkeleton />}>

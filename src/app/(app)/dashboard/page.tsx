@@ -1,6 +1,6 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
-import { StaffNav } from "@/components/staff/staff-nav";
 import { monthLabel } from "@/components/staff/labels";
 import { DashboardSkeleton } from "@/components/staff/skeletons";
 import { Badge } from "@/components/ui/badge";
@@ -55,7 +55,6 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <StaffNav active="/dashboard" />
       <h1 className="mb-6 text-2xl font-semibold tracking-tight">Dashboard</h1>
       <Suspense fallback={<DashboardSkeleton />}>
         <DashboardBody userId={userId} />
@@ -84,7 +83,9 @@ async function DashboardBody({ userId }: { userId: string }) {
           <CardHeader>
             <CardDescription>Overdue invoices</CardDescription>
             <CardTitle className="text-3xl tabular-nums" data-testid="overdue-count">
-              {overdue}
+              <Link href="/leases" className="underline-offset-4 hover:underline" aria-label={`${overdue} overdue invoices, view leases`}>
+                {overdue}
+              </Link>
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
