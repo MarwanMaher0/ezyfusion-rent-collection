@@ -7,7 +7,7 @@ Both requests go through `handleGatewayCallback` (src/server/services/webhook.ts
 The first locks the bill row `FOR UPDATE` (supabase/migrations/20261026000002_money.sql:522). The second blocks on that lock.
 The first sees `pending`, sets the bill `paid` (:550), inserts the online payment with `received_at = paid_at` (:555), allocates it and commits.
 The second then gets the lock, re-reads the bill, sees `status = 'paid'` (:537) and returns `duplicate`. That is 200 with no effect.
-The guarantee is the row lock plus that status check. `payments.gateway_bill_id` is also UNIQUE (20261026000001_schema.sql:155) and the insert uses `on conflict do nothing` (:558–564), so even without the lock a second payment for one bill cannot exist.
+The guarantee is the row lock plus that status check. `payments.gateway_bill_id` is also UNIQUE (20261026000001_schema.sql:155) and the insert in money.sql uses `on conflict do nothing` (:555–564), so even without the lock a second payment for one bill cannot exist.
 Tested in tests/webhook/gateway.test.ts: 10 simultaneous deliveries create one payment.
 
 ## 2. RM 800 and RM 700 at the same moment, RM 1,000 remaining
@@ -18,17 +18,17 @@ Tested in tests/concurrency/payments.test.ts over HTTP, 5 rounds.
 
 ## 3. Every place that works out "today" or converts date ↔ instant
 Malaysia is UTC+8 with no daylight saving, so one fixed offset is exact whatever the server or browser zone.
-- `toMytDate` (src/lib/billing.ts:172) gives today in Malaysia. It is used by `invoiceStatus` (:178) for overdue, by `overdueCount` (src/server/services/reports.ts:61), the dashboard month range (src/app/(app)/dashboard/page.tsx:71) and the tenant's amount due now (src/components/tenant/lease-section.tsx:115).
-- SQL today for a gateway bill is `(p_as_of at time zone 'Asia/Kuala_Lumpur')::date` (money.sql:462).
-- Collections group by `received_at at time zone 'Asia/Kuala_Lumpur'` (reports.ts:39).
-- Inputs: `parseInstantWithOffset` (src/lib/dates.ts:40) requires an offset. `mytLocalToIso` (:59) reads the form's datetime-local as +08:00. The webhook's `paid_at` keeps its own offset (webhook.ts:66).
-- Outputs: `formatInstantMyt` and `formatMytDisplay` (dates.ts:32, :77). `dateToIso` (:70) reads Prisma's UTC-midnight `date` values.
+- **Today:** `toMytDate` (src/lib/billing.ts:172) is used by `invoiceStatus` (:178), `overdueCount` (src/server/services/reports.ts:61), the dashboard months (src/app/(app)/dashboard/page.tsx:70) and the tenant's amount due (src/components/tenant/lease-section.tsx:115, `now` set after mount, tenant-portal.tsx:141). The routes pass `new Date()` as `asOf` (src/app/api/leases/[leaseId]/route.ts:9, gateway-bills/route.ts:10). SQL uses `(p_as_of at time zone 'Asia/Kuala_Lumpur')::date` (money.sql:462).
+- **Months:** collections group by `received_at at time zone 'Asia/Kuala_Lumpur'` (reports.ts:39).
+- **Input:** `parseInstantWithOffset` (src/lib/dates.ts:40) requires an offset; `mytLocalToIso` (:59) reads the form as +08:00; the form's default comes from `formatInstantMyt(new Date())` (leases/[leaseId]/page.tsx:204); the webhook's `paid_at` keeps its own offset (webhook.ts:66).
+- **Calendar dates:** `isoDateToDb` (serialize.ts:44) and `dateToIso` (dates.ts:70) use UTC midnight, which is how Prisma represents `date`.
+- **Output:** `formatInstantMyt`, `formatMytDisplay` (dates.ts:32, :77).
 
 ## 4. Queries not subject to RLS, and what authorizes them instead
 - **Prisma connects as `postgres`.** Every route first authenticates with `auth.getUser()` (src/server/auth.ts). It then loads the role from `memberships`/`tenants.user_id` with `loadCaller` (src/server/access.ts:27). Then `requireMember`, `requireLeaseAccess` or `requirePaymentAccess` (:37, :60, :66) returns 404 when the record isn't visible and 403 when the role is wrong. Queries are scoped by the org that check returned.
 - **The private plpgsql money functions run as the owner.** They also re-check the actor: manager or staff of the lease's org, the tenant for bills, a manager for decisions. They are not executable by anon or authenticated.
-- **The SECURITY DEFINER RLS helpers** (schema.sql:331–358) only answer "is the caller a member or tenant?" from `auth.uid()`, and use `search_path = ''`.
-- **The secret-key client** is used only by the seed, slip deletion and the 60-second signed URLs (payments.ts:55, :196). Both payment uses run after `requirePaymentAccess`, and the path is read from the database row.
+- **The SECURITY DEFINER RLS helpers** (schema.sql:330–365) only answer "is the caller a member or tenant?" from `auth.uid()`, and use `search_path = ''`.
+- **The secret-key client** is used only by the seed, slip deletion and the 60-second signed URLs (payments.ts:55, :213). Both payment uses run after `requirePaymentAccess`, and the path is read from the database row.
 
 ## 5. A void reopens invoices while an online payment still has unapplied_sen
 Nothing moves automatically. `void_payment` deletes only the voided payment's allocations (money.sql:399) and marks it `voided` (:406). The reopened invoices show as unpaid or overdue again. The other payment's `unapplied_sen` stays as it was.
