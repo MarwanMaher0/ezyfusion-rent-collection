@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import pg from "pg";
 
 // globalSetup: make sure a Next server answers on TEST_BASE_URL. If the lead's dev server
 // (http://127.0.0.1:3000) is down, start `next dev -p 3100` for this run and stop it in teardown,
@@ -20,7 +21,59 @@ async function answers(base: string): Promise<boolean> {
   }
 }
 
+// The fast gate resets the DB right before the suite, so the brief's seed may be missing. If the
+// seeded manager account does not exist, run `npm run seed` once (the real seed, R5) and fail setup
+// if it fails. The seed itself refuses when the brief orgs already exist (D48), so this never
+// double-seeds.
+const SEED_MARKER_EMAIL = "manager@northwind.test";
+const SEED_TIMEOUT_MS = 180_000;
+
+async function seededAccountExists(): Promise<boolean> {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("globalSetup: DATABASE_URL is not set (expected in .env.local)");
+  const client = new pg.Client({ connectionString: url });
+  await client.connect();
+  try {
+    const r = await client.query("select 1 from auth.users where lower(email) = $1", [SEED_MARKER_EMAIL]);
+    return (r.rowCount ?? 0) > 0;
+  } finally {
+    await client.end().catch(() => undefined);
+  }
+}
+
+function runSeed(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const p = spawn("npm", ["run", "seed"], { stdio: "inherit", env: { ...process.env } });
+    const timer = setTimeout(() => {
+      p.kill("SIGTERM");
+      reject(new Error(`globalSetup: npm run seed did not finish in ${SEED_TIMEOUT_MS} ms`));
+    }, SEED_TIMEOUT_MS);
+    p.on("error", (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+    p.on("exit", (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      else reject(new Error(`globalSetup: npm run seed failed (exit ${code ?? signal})`));
+    });
+  });
+}
+
+async function ensureSeeded(): Promise<void> {
+  if (await seededAccountExists()) return;
+  await runSeed();
+  if (!(await seededAccountExists())) {
+    throw new Error(`globalSetup: npm run seed exited 0 but ${SEED_MARKER_EMAIL} still does not exist`);
+  }
+}
+
 export async function setup(): Promise<void> {
+  await ensureServer();
+  await ensureSeeded();
+}
+
+async function ensureServer(): Promise<void> {
   const base = (process.env.TEST_BASE_URL || DEFAULT_BASE).replace(/\/+$/, "");
   if (await answers(base)) {
     process.env.TEST_BASE_URL = base;

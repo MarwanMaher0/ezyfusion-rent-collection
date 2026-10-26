@@ -22,6 +22,11 @@ Test files run one at a time (`fileParallelism: false`); tests inside a file are
 | `fixtures.ts` | `createFixtureOrg({ name?, units = 2, lease?, leaseTenant = 'A' }) -> FixtureOrg` | fresh org: manager + staff memberships, units, tenants A/B linked to fresh auth users (`*@fixture.test`, SEED_PASSWORD, signed in). `lease` inserts a lease on `unitIds[0]` + exactly `generateSchedule(lease)` invoices. Returns `{ orgId, orgName, unitIds, tenantAId, tenantBId, users: {manager, staff, tenantA, tenantB}, tokens: {...}, lease?: { id, ..., invoices: [{ id, ...ScheduledInvoice }] } }` |
 | | `insertLease(orgId, unitId, tenantId, lease, createdBy?)`, `insertUnit(orgId, name?)`, `insertTenant(orgId, userId, fullName, email)`, `createFixtureUser(label)` | building blocks (direct pg, no audit rows) |
 | `time.ts` | `asOf(isoWithOffset)`, `mytAt(date, "HH:MM[:SS]")`, `mytMidnight(date)`, `mytEndOfDay(date)` | deterministic instants; `asOf` rejects naive strings |
+| `contract.ts` | `errorBody`, `idBody`, `recordPaymentBody`, `statusBody`, `leaseDetail` (+ `leaseDto`/`invoiceDto`/`paymentDto`), `collectionsBody` | strict zod schemas of SPEC's HTTP bodies, written from SPEC (never imported from the app) |
+| | `uploadSlip(token, orgId, leaseId) -> path` | uploads a real PDF to `payment-slips/<org>/<lease>/<uuid>.pdf` as that user (UI path); throws if Storage refuses |
+
+`tests/setup/global.ts` also runs `npm run seed` once when `manager@northwind.test` is missing from auth.users
+(fast gate: reset, then tests), and fails setup if the seed fails.
 
 Fixtures are never deleted (D29: payments and audit_log are append-only); use random names.
 Never insert payments/allocations directly to set up a scenario you then assert on: go through the API or the
