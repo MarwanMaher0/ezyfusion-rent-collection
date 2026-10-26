@@ -23,15 +23,15 @@ The `bill.status === 'paid'` check (line 77) runs outside the transaction and wi
 **Scenario:** the gateway retries the same `paid=true` callback 5 ms apart. Both requests read `pending`, both enter the transaction, both set `paid`, and both create and allocate an approved payment, so the tenant is credited twice. The brief requires "A bill creates at most one payment, ever."
 **Fix:** inside the transaction, lock the bill (`SELECT … FOR UPDATE`) or make the transition conditional: `UPDATE gateway_bills SET status = 'paid' WHERE id = $1 AND status <> 'paid' RETURNING id`. If no row is returned, answer 200 with no effect. Back it with `UNIQUE (payments.gateway_bill_id)`.
 
-## 5. High — the paid amount is not checked against the bill (lines 75–87)
-The payment amount is whatever `paid_amount` says. The brief requires 422 with no effect when `paid=true` and `paid_amount` differs from the bill's amount.
-**Scenario:** a bill for RM 2,100.50 is settled with `paid_amount=1`, which marks the bill paid and records RM 0.01. Or a gateway bug sends a larger amount and the lease is credited money that was never billed.
-**Fix:** `if (BigInt(fields.paid_amount) !== bill.amountSen) return 422`, before any write, and use `bill.amountSen` for the payment.
-
-## 6. High — the log line leaks the whole callback and a valid signature (line 70)
+## 5. Critical — the log line leaks the whole callback and a valid signature (line 70)
 `console.error('Invalid signature', { fields, expected })` writes the full payload and the correct HMAC for those exact fields. The brief says "Never log … whole callback payloads".
 **Scenario:** an attacker who can read the logs (log aggregator, shared dashboard) sends a forged callback such as `id=<their bill>&paid=true&paid_amount=…`, gets a 401, reads `expected` from the log, and replays the same fields with that signature: the forged payment is accepted.
 **Fix:** log only the bill id and the outcome ("invalid signature"), never `expected` or the fields.
+
+## 6. High — the paid amount is not checked against the bill (lines 75–87)
+The payment amount is whatever `paid_amount` says. The brief requires 422 with no effect when `paid=true` and `paid_amount` differs from the bill's amount.
+**Scenario:** a bill for RM 2,100.50 is settled with `paid_amount=1`, which marks the bill paid and records RM 0.01. Or a gateway bug sends a larger amount and the lease is credited money that was never billed.
+**Fix:** `if (BigInt(fields.paid_amount) !== bill.amountSen) return 422`, before any write, and use `bill.amountSen` for the payment.
 
 ## 7. High — late fees are not idempotent (lines 27–46)
 Nothing records that a fee was already charged for an invoice.

@@ -11,7 +11,7 @@ The guarantee is the row lock plus that status check. `payments.gateway_bill_id`
 Tested in tests/webhook/gateway.test.ts: 10 simultaneous deliveries create one payment.
 
 ## 2. RM 800 and RM 700 at the same moment, RM 1,000 remaining
-Both calls reach `private.record_payment`, which first takes the lease row `FOR UPDATE` (money.sql:107–113, D7). One request, say RM 800, gets the lock. It computes the cap after the lock (:186–188): 1,000 − 0 allocated − 0 pending = 1,000, so RM 800 is accepted as `pending_verification` and commits.
+Both calls reach `private.record_payment`, which first takes the lease row `FOR UPDATE` (money.sql:107–113, D7). One request, say RM 800, gets the lock. It computes the cap after the lock (:180–188): 1,000 − 0 allocated − 0 pending = 1,000, so RM 800 is accepted as `pending_verification` and commits.
 The second request was blocked on the same lease row. READ COMMITTED gives its next statement a fresh snapshot, so its cap is 1,000 − 800 pending = 200, and RM 700 gets P0422, which is HTTP 422.
 Because the cap is always computed after the lock, never before, both cannot be accepted, whichever request arrives first. The functions also refuse to run at any other isolation level (D41).
 Tested in tests/concurrency/payments.test.ts over HTTP, 5 rounds.
@@ -25,10 +25,10 @@ Malaysia is UTC+8 with no daylight saving, so one fixed offset is exact whatever
 - **Output:** `formatInstantMyt`, `formatMytDisplay` (dates.ts:32, :77).
 
 ## 4. Queries not subject to RLS, and what authorizes them instead
-- **Prisma connects as `postgres`.** Every route first authenticates with `auth.getUser()` (src/server/auth.ts). It then loads the role from `memberships`/`tenants.user_id` with `loadCaller` (src/server/access.ts:27). Then `requireMember`, `requireLeaseAccess` or `requirePaymentAccess` (:37, :60, :66) returns 404 when the record isn't visible and 403 when the role is wrong. Queries are scoped by the org that check returned.
-- **The private plpgsql money functions run as the owner.** They also re-check the actor: manager or staff of the lease's org, the tenant for bills, a manager for decisions. They are not executable by anon or authenticated.
-- **The SECURITY DEFINER RLS helpers** (schema.sql:330–365) only answer "is the caller a member or tenant?" from `auth.uid()`, and use `search_path = ''`.
-- **The secret-key client** is used only by the seed, slip deletion and the 60-second signed URLs (payments.ts:55, :213). Both payment uses run after `requirePaymentAccess`, and the path is read from the database row.
+- **Prisma connects as `postgres`.** Every route authenticates with `auth.getUser()` (src/server/auth.ts), loads the role from `memberships`/`tenants.user_id` (`loadCaller`, src/server/access.ts:27), then `requireMember`/`requireLeaseAccess`/`requirePaymentAccess` (:37, :60, :66) answer 404 when not visible and 403 for the wrong role. Queries are scoped by the org that check returned.
+- **Private plpgsql money functions** run as the owner but re-check the actor (manager/staff of the lease's org, the lease tenant for bills, a manager for decisions). anon and authenticated cannot execute them.
+- **SECURITY DEFINER RLS helpers** (schema.sql:330–365) only answer "is the caller a member or tenant?" from `auth.uid()`, with `search_path = ''`.
+- **Secret-key Storage client:** slip deletion (payments.ts:50-55) removes only an unreferenced object inside the caller's own org folder; the signed URL (:211-213) runs after `requirePaymentAccess` and uses `slip_path` from the DB row.
 
 ## 5. A void reopens invoices while an online payment still has unapplied_sen
 Nothing moves automatically. `void_payment` deletes only the voided payment's allocations (money.sql:399) and marks it `voided` (:406). The reopened invoices show as unpaid or overdue again. The other payment's `unapplied_sen` stays as it was.
@@ -115,3 +115,5 @@ D67 · Root layout types its props explicitly ({ children: React.ReactNode }) in
 D68 · Submission: public GitHub repo MarwanMaher0/ezyfusion-rent-collection created with gh and pushed at the end (after the final gate + ai-logs export) · brief: public repo with full history · push mid-build · Marwan  
 D69 · Slip cleanup may run twice on a failure inside recordPayment (service catch + route catch); both are idempotent (orphan check + remove) · accepted for now: correctness first, two extra round-trips only on failures · single cleanup owner (would need a service option) · Marwan  
 D70 · GitHub push protection flagged the Supabase CLI's fixed local default secret key in .env.example; Marwan allowed it on GitHub (used in tests) instead of replacing it · the brief requires .env.example with local values and npm run seed needs it right after cp .env.example .env.local; the key only works against a local Docker stack · placeholder + history rewrite (breaks the grader command sequence) · Marwan  
+D71 · Bonus pagination: listLeasesPage(ctx, { q, page, pageSize }) — pageSize 1..50 default 10, invalid page → 1, page beyond the end → last page, stable order unit/start/id, same org/tenant scoping and q filter as listLeases; GET /api/leases unchanged · brief bonus 'server-side search and pagination synced with the URL'; keeps the existing API contract · client-side paging; changing /api/leases to an envelope · Marwan  
+D72 · No route-level loading.tsx on /leases/[leaseId] (audit item 4 declined, pending Marwan): it would flush a 200 + skeleton before getLease's access check, so another org's lease would answer 200 with a streamed not-found instead of the real 404 (D61) · real status codes over a skeleton · loading.tsx · pending  
