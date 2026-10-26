@@ -1,0 +1,22 @@
+export const meta = {
+  name: 'hardstop-b-panel',
+  description: 'Hard stop (b) adversarial panel: security-auditor (items 1-5, 9-10) + reviewer money/dates + reviewer RLS/authz on 1b8a2c4..HEAD',
+  phases: [{ title: 'Panel' }],
+}
+const CTX = `Timed build, working dir ./app. Source of truth ../BRIEF.md; contracts and decisions ../SPEC.md and ../DECISIONS.md. The brief overrides CLAUDE.md where SPEC.md says so (error body {error: string}; idempotency key OPTIONAL header; no webhook_events / replay window; bigint sen; invoice status computed, never stored; seed via npm run seed; payments status updated in place under a guard trigger). Cumulative diff to review: git diff 1b8a2c4..HEAD (T1 schema/RLS, T4 money functions, T2 lib, T5 services/routes/seed, T3/T6 tests, T11a UI shell). NOT built yet (do not report as missing): POST /api/leases/:leaseId/gateway-bills, POST /api/webhooks/gateway, staff/tenant UI pages. The local stack is up and seeded with the brief's accounts (password RentDemo#2026, publishable key and URL in .env.local); dev server on http://127.0.0.1:3000. Read-only: never edit files, never reset the DB, any DB probe that writes must run in a transaction that ROLLS BACK, and DB/HTTP probes go through bash ../scripts/with-db.sh when they touch the DB. One simple command per Bash call.`
+const FIND = { type: 'object', properties: {
+  verdict: { type: 'string', enum: ['PASS', 'FAIL'] },
+  findings: { type: 'array', items: { type: 'object', properties: {
+    severity: { type: 'string', enum: ['blocker', 'major', 'minor'] }, area: { type: 'string' }, file: { type: 'string' }, line: { type: 'string' },
+    repro: { type: 'string', description: 'exact request/SQL and observed result' }, fix: { type: 'string' } }, required: ['severity', 'area', 'repro', 'fix'] } } },
+  required: ['verdict', 'findings'] }
+const sec = agent(`${CTX}\nYou are the security auditor for hard stop (b). Run your checklist items 1-5 and 9-10 against the running local stack as anon and as every seeded role (manager/staff/tenants of Northwind, manager/tenant of Beta): PostgREST tables + /rest/v1/rpc, Storage bucket payment-slips, the route handlers that exist (/api/leases, /api/leases/:id, /api/leases/:id/payments, /api/payments/:id/approve|reject|void|slip, /api/reports/collections), plus static checks for secret leaks (SUPABASE_SECRET_KEY reachable from client code or NEXT_PUBLIC vars, getSession on server, user_metadata roles). Every finding needs a reproducible request and the observed response. End with SECURITY: PASS or SECURITY: FAIL in your verdict field (PASS/FAIL).`,
+  { agentType: 'security-auditor', label: 'panel:security-auditor', phase: 'Panel', schema: FIND })
+const money = agent(`${CTX}\nReviewer lens: MONEY + DATES + CONCURRENCY. Try to refute that the diff meets the brief's rules: billing.ts (schedule, anchors, proration half-up, validation, invoiceStatus 16:00Z boundary, parseRinggitToSen), sen as bigint/number with no floats, MYT 'today' everywhere, collections in MYT with empty months, cap (Σinvoices − Σallocations − Σpending), approve re-check, allocation order, void, the lease FOR UPDATE lock order, idempotency replay, 0-sen rent invoices, receivedAt offsets. You may run read-only probes and rolled-back transactions. Report only real problems with a concrete failing scenario; end PASS or FAIL.`,
+  { agentType: 'reviewer', label: 'panel:reviewer-money', phase: 'Panel', schema: FIND })
+const authz = agent(`${CTX}\nReviewer lens: RLS + SERVER AUTHORIZATION. Try to refute that the diff meets the brief's section 6 and 7: Data API matrix per role (tables, column grant on tenants.phone, no writes anywhere, no callable functions), audit_log append-only even for owner/service_role, storage policies, every route's 401/404/403/400 order, cross-org ids in bodies (D15 → 404), roles only from memberships / tenants.user_id, Bearer + cookie, getUser not getSession, Prisma queries scoped by the checked org. Report only real problems with a concrete failing scenario; end PASS or FAIL.`,
+  { agentType: 'reviewer', label: 'panel:reviewer-authz', phase: 'Panel', schema: FIND })
+const [s, m, a] = await Promise.all([sec, money, authz])
+const fails = [s, m, a].filter(r => r && r.verdict === 'FAIL').length
+log(`panel: security=${s && s.verdict} money=${m && m.verdict} authz=${a && a.verdict}; ${fails}/3 FAIL (item fails if >= 2)`)
+return { security: s, money: m, authz: a, failCount: fails }

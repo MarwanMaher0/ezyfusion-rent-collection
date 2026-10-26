@@ -1,0 +1,482 @@
+2:  provider        = "prisma-client"
+3:  output          = "../src/generated/prisma"
+8:  provider = "postgresql"
+9:  schemas  = ["auth", "public"]
+14:model audit_log_entries {
+15:  instance_id String?   @db.Uuid
+16:  id          String    @id @db.Uuid
+17:  payload     Json?     @db.Json
+18:  created_at  DateTime? @db.Timestamptz(6)
+19:  ip_address  String    @default("") @db.VarChar(64)
+26:model custom_oauth_providers {
+27:  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+28:  provider_type           String
+29:  identifier              String    @unique
+30:  name                    String
+31:  client_id               String
+32:  client_secret           String
+33:  acceptable_client_ids   String[]  @default([])
+34:  scopes                  String[]  @default([])
+35:  pkce_enabled            Boolean   @default(true)
+36:  attribute_mapping       Json      @default("{}")
+37:  authorization_params    Json      @default("{}")
+38:  enabled                 Boolean   @default(true)
+39:  email_optional          Boolean   @default(false)
+40:  issuer                  String?
+41:  discovery_url           String?
+42:  skip_nonce_check        Boolean   @default(false)
+43:  cached_discovery        Json?
+44:  discovery_cached_at     DateTime? @db.Timestamptz(6)
+45:  authorization_url       String?
+46:  token_url               String?
+47:  userinfo_url            String?
+48:  jwks_uri                String?
+49:  created_at              DateTime  @default(now()) @db.Timestamptz(6)
+50:  updated_at              DateTime  @default(now()) @db.Timestamptz(6)
+51:  custom_claims_allowlist String[]  @default([])
+62:model flow_state {
+63:  id                     String                 @id @db.Uuid
+64:  user_id                String?                @db.Uuid
+65:  auth_code              String?
+66:  code_challenge_method  code_challenge_method?
+67:  code_challenge         String?
+68:  provider_type          String
+69:  provider_access_token  String?
+70:  provider_refresh_token String?
+71:  created_at             DateTime?              @db.Timestamptz(6)
+72:  updated_at             DateTime?              @db.Timestamptz(6)
+73:  authentication_method  String
+74:  auth_code_issued_at    DateTime?              @db.Timestamptz(6)
+75:  invite_token           String?
+76:  referrer               String?
+77:  oauth_client_state_id  String?                @db.Uuid
+78:  linking_target_id      String?                @db.Uuid
+79:  email_optional         Boolean                @default(false)
+80:  saml_relay_states      saml_relay_states[]
+90:model identities {
+91:  provider_id     String
+92:  user_id         String    @db.Uuid
+93:  identity_data   Json
+94:  provider        String
+95:  last_sign_in_at DateTime? @db.Timestamptz(6)
+96:  created_at      DateTime? @db.Timestamptz(6)
+97:  updated_at      DateTime? @db.Timestamptz(6)
+98:  email           String?   @default(dbgenerated("lower((identity_data ->> 'email'::text))"))
+99:  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+100:  users           users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+110:model instances {
+111:  id              String    @id @db.Uuid
+112:  uuid            String?   @db.Uuid
+113:  raw_base_config String?
+114:  created_at      DateTime? @db.Timestamptz(6)
+115:  updated_at      DateTime? @db.Timestamptz(6)
+122:model mfa_amr_claims {
+123:  session_id            String   @db.Uuid
+124:  created_at            DateTime @db.Timestamptz(6)
+125:  updated_at            DateTime @db.Timestamptz(6)
+126:  authentication_method String
+127:  id                    String   @id(map: "amr_id_pk") @db.Uuid
+128:  sessions              sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+136:model mfa_challenges {
+137:  id                     String      @id @db.Uuid
+138:  factor_id              String      @db.Uuid
+139:  created_at             DateTime    @db.Timestamptz(6)
+140:  verified_at            DateTime?   @db.Timestamptz(6)
+141:  ip_address             String      @db.Inet
+142:  otp_code               String?
+143:  web_authn_session_data Json?
+144:  mfa_factors            mfa_factors @relation(fields: [factor_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "mfa_challenges_auth_factor_id_fkey")
+152:model mfa_factors {
+153:  id                           String                  @id @db.Uuid
+154:  user_id                      String                  @db.Uuid
+155:  friendly_name                String?
+156:  factor_type                  factor_type
+157:  status                       factor_status
+158:  created_at                   DateTime                @db.Timestamptz(6)
+159:  updated_at                   DateTime                @db.Timestamptz(6)
+160:  secret                       String?
+161:  phone                        String?
+162:  last_challenged_at           DateTime?               @unique @db.Timestamptz(6)
+163:  web_authn_credential         Json?
+164:  web_authn_aaguid             String?                 @db.Uuid
+165:  last_webauthn_challenge_data Json?
+166:  mfa_challenges               mfa_challenges[]
+167:  users                        users                   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+168:  mfa_recovery_code_sets       mfa_recovery_code_sets?
+178:model mfa_recovery_code_sets {
+179:  id                        String               @id @db.Uuid
+180:  user_id                   String               @unique @db.Uuid
+181:  mfa_factor_id             String               @unique @db.Uuid
+182:  failed_verification_count Int                  @default(0)
+183:  verification_locked_until DateTime?            @db.Timestamptz(6)
+184:  created_at                DateTime             @default(now()) @db.Timestamptz(6)
+185:  updated_at                DateTime             @default(now()) @db.Timestamptz(6)
+186:  mfa_factors               mfa_factors          @relation(fields: [mfa_factor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+187:  users                     users                @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+188:  mfa_recovery_codes        mfa_recovery_codes[]
+193:model mfa_recovery_codes {
+194:  id                       String                 @id @db.Uuid
+195:  mfa_recovery_code_set_id String                 @db.Uuid
+196:  code_hash                String
+197:  consumed_at              DateTime?              @db.Timestamptz(6)
+198:  created_at               DateTime               @default(now()) @db.Timestamptz(6)
+199:  mfa_recovery_code_sets   mfa_recovery_code_sets @relation(fields: [mfa_recovery_code_set_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+206:model oauth_authorizations {
+207:  id                    String                     @id @db.Uuid
+208:  authorization_id      String                     @unique
+209:  client_id             String                     @db.Uuid
+210:  user_id               String?                    @db.Uuid
+211:  redirect_uri          String
+212:  scope                 String
+213:  state                 String?
+214:  resource              String?
+215:  code_challenge        String?
+216:  code_challenge_method code_challenge_method?
+217:  response_type         oauth_response_type        @default(code)
+218:  status                oauth_authorization_status @default(pending)
+219:  authorization_code    String?                    @unique
+220:  created_at            DateTime                   @default(now()) @db.Timestamptz(6)
+221:  expires_at            DateTime                   @default(dbgenerated("(now() + '00:03:00'::interval)")) @db.Timestamptz(6)
+222:  approved_at           DateTime?                  @db.Timestamptz(6)
+223:  nonce                 String?
+224:  oauth_clients         oauth_clients              @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+225:  users                 users?                     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+232:model oauth_client_states {
+233:  id            String   @id @db.Uuid
+234:  provider_type String
+235:  code_verifier String?
+236:  created_at    DateTime @db.Timestamptz(6)
+243:model oauth_clients {
+244:  id                         String                  @id @db.Uuid
+245:  client_secret_hash         String?
+246:  registration_type          oauth_registration_type
+247:  redirect_uris              String
+248:  grant_types                String
+249:  client_name                String?
+250:  client_uri                 String?
+251:  logo_uri                   String?
+252:  created_at                 DateTime                @default(now()) @db.Timestamptz(6)
+253:  updated_at                 DateTime                @default(now()) @db.Timestamptz(6)
+254:  deleted_at                 DateTime?               @db.Timestamptz(6)
+255:  client_type                oauth_client_type       @default(confidential)
+256:  token_endpoint_auth_method String
+257:  oauth_authorizations       oauth_authorizations[]
+258:  oauth_consents             oauth_consents[]
+259:  sessions                   sessions[]
+266:model oauth_consents {
+267:  id            String        @id @db.Uuid
+268:  user_id       String        @db.Uuid
+269:  client_id     String        @db.Uuid
+270:  scopes        String
+271:  granted_at    DateTime      @default(now()) @db.Timestamptz(6)
+272:  revoked_at    DateTime?     @db.Timestamptz(6)
+273:  oauth_clients oauth_clients @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+274:  users         users         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+285:model one_time_tokens {
+286:  id         String              @id @db.Uuid
+287:  user_id    String              @db.Uuid
+288:  token_type one_time_token_type
+289:  token_hash String
+290:  relates_to String
+291:  created_at DateTime            @default(now()) @db.Timestamp(6)
+292:  updated_at DateTime            @default(now()) @db.Timestamp(6)
+293:  expires_at DateTime?           @db.Timestamptz(6)
+294:  users      users               @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+304:model refresh_tokens {
+305:  instance_id String?   @db.Uuid
+306:  id          BigInt    @id @default(autoincrement())
+307:  token       String?   @unique(map: "refresh_tokens_token_unique") @db.VarChar(255)
+308:  user_id     String?   @db.VarChar(255)
+309:  revoked     Boolean?
+310:  created_at  DateTime? @db.Timestamptz(6)
+311:  updated_at  DateTime? @db.Timestamptz(6)
+312:  parent      String?   @db.VarChar(255)
+313:  session_id  String?   @db.Uuid
+314:  sessions    sessions? @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+327:model saml_providers {
+328:  id                String        @id @db.Uuid
+329:  sso_provider_id   String        @db.Uuid
+330:  entity_id         String        @unique
+331:  metadata_xml      String
+332:  metadata_url      String?
+333:  attribute_mapping Json?
+334:  created_at        DateTime?     @db.Timestamptz(6)
+335:  updated_at        DateTime?     @db.Timestamptz(6)
+336:  name_id_format    String?
+337:  sso_providers     sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+346:model saml_relay_states {
+347:  id              String        @id @db.Uuid
+348:  sso_provider_id String        @db.Uuid
+349:  request_id      String
+350:  for_email       String?
+351:  redirect_to     String?
+352:  created_at      DateTime?     @db.Timestamptz(6)
+353:  updated_at      DateTime?     @db.Timestamptz(6)
+354:  flow_state_id   String?       @db.Uuid
+355:  flow_state      flow_state?   @relation(fields: [flow_state_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+356:  sso_providers   sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+366:model schema_migrations {
+367:  version String @id @db.VarChar(255)
+373:model scim_tokens {
+374:  id              String        @id @db.Uuid
+375:  sso_provider_id String        @db.Uuid
+376:  token_hash      String        @unique
+377:  prefix          String
+378:  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+379:  expires_at      DateTime?     @db.Timestamptz(6)
+380:  revoked_at      DateTime?     @db.Timestamptz(6)
+381:  last_used_at    DateTime?     @db.Timestamptz(6)
+382:  sso_providers   sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+390:model scim_users {
+391:  id              String        @id @db.Uuid
+392:  sso_provider_id String        @db.Uuid
+393:  user_id         String?       @db.Uuid
+394:  resource        Json
+395:  user_name       String        @default(dbgenerated("lower((resource ->> 'userName'::text))"))
+396:  external_id     String?       @default(dbgenerated("(resource ->> 'externalId'::text)"))
+397:  active          Boolean       @default(dbgenerated("COALESCE(((resource ->> 'active'::text))::boolean, true)"))
+398:  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+399:  updated_at      DateTime      @default(now()) @db.Timestamptz(6)
+400:  deleted_at      DateTime?     @db.Timestamptz(6)
+401:  sso_providers   sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+402:  users           users?        @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+419:model sessions {
+420:  id                     String           @id @db.Uuid
+421:  user_id                String           @db.Uuid
+422:  created_at             DateTime?        @db.Timestamptz(6)
+423:  updated_at             DateTime?        @db.Timestamptz(6)
+424:  factor_id              String?          @db.Uuid
+425:  aal                    aal_level?
+426:  not_after              DateTime?        @db.Timestamptz(6)
+427:  refreshed_at           DateTime?        @db.Timestamp(6)
+428:  user_agent             String?
+429:  ip                     String?          @db.Inet
+430:  tag                    String?
+431:  oauth_client_id        String?          @db.Uuid
+432:  refresh_token_hmac_key String?
+433:  refresh_token_counter  BigInt?
+434:  scopes                 String?
+435:  mfa_amr_claims         mfa_amr_claims[]
+436:  refresh_tokens         refresh_tokens[]
+437:  oauth_clients          oauth_clients?   @relation(fields: [oauth_client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+438:  users                  users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+451:model sso_domains {
+452:  id              String        @id @db.Uuid
+453:  sso_provider_id String        @db.Uuid
+454:  domain          String
+455:  created_at      DateTime?     @db.Timestamptz(6)
+456:  updated_at      DateTime?     @db.Timestamptz(6)
+457:  sso_providers   sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+467:model sso_providers {
+468:  id                String              @id @db.Uuid
+469:  resource_id       String?
+470:  created_at        DateTime?           @db.Timestamptz(6)
+471:  updated_at        DateTime?           @db.Timestamptz(6)
+472:  disabled          Boolean?
+473:  saml_providers    saml_providers[]
+474:  saml_relay_states saml_relay_states[]
+475:  scim_tokens       scim_tokens[]
+476:  scim_users        scim_users[]
+477:  sso_domains       sso_domains[]
+487:model users {
+488:  instance_id                 String?                 @db.Uuid
+489:  id                          String                  @id @db.Uuid
+490:  aud                         String?                 @db.VarChar(255)
+491:  role                        String?                 @db.VarChar(255)
+492:  email                       String?                 @unique(map: "users_email_partial_key", where: raw("(is_sso_user = false)")) @db.VarChar(255)
+493:  encrypted_password          String?                 @db.VarChar(255)
+494:  email_confirmed_at          DateTime?               @db.Timestamptz(6)
+495:  invited_at                  DateTime?               @db.Timestamptz(6)
+496:  confirmation_token          String?                 @unique(map: "confirmation_token_idx", where: raw("((confirmation_token)::text !~ '^[0-9 ]*$'::text)")) @db.VarChar(255)
+497:  confirmation_sent_at        DateTime?               @db.Timestamptz(6)
+498:  recovery_token              String?                 @unique(map: "recovery_token_idx", where: raw("((recovery_token)::text !~ '^[0-9 ]*$'::text)")) @db.VarChar(255)
+499:  recovery_sent_at            DateTime?               @db.Timestamptz(6)
+500:  email_change_token_new      String?                 @unique(map: "email_change_token_new_idx", where: raw("((email_change_token_new)::text !~ '^[0-9 ]*$'::text)")) @db.VarChar(255)
+501:  email_change                String?                 @db.VarChar(255)
+502:  email_change_sent_at        DateTime?               @db.Timestamptz(6)
+503:  last_sign_in_at             DateTime?               @db.Timestamptz(6)
+504:  raw_app_meta_data           Json?
+505:  raw_user_meta_data          Json?
+506:  is_super_admin              Boolean?
+507:  created_at                  DateTime?               @db.Timestamptz(6)
+508:  updated_at                  DateTime?               @db.Timestamptz(6)
+509:  phone                       String?                 @unique
+510:  phone_confirmed_at          DateTime?               @db.Timestamptz(6)
+511:  phone_change                String?                 @default("")
+512:  phone_change_token          String?                 @default("") @db.VarChar(255)
+513:  phone_change_sent_at        DateTime?               @db.Timestamptz(6)
+514:  confirmed_at                DateTime?               @default(dbgenerated("LEAST(email_confirmed_at, phone_confirmed_at)")) @db.Timestamptz(6)
+515:  email_change_token_current  String?                 @unique(map: "email_change_token_current_idx", where: raw("((email_change_token_current)::text !~ '^[0-9 ]*$'::text)")) @default("") @db.VarChar(255)
+516:  email_change_confirm_status Int?                    @default(0) @db.SmallInt
+517:  banned_until                DateTime?               @db.Timestamptz(6)
+518:  reauthentication_token      String?                 @unique(map: "reauthentication_token_idx", where: raw("((reauthentication_token)::text !~ '^[0-9 ]*$'::text)")) @default("") @db.VarChar(255)
+519:  reauthentication_sent_at    DateTime?               @db.Timestamptz(6)
+520:  is_sso_user                 Boolean                 @default(false)
+521:  deleted_at                  DateTime?               @db.Timestamptz(6)
+522:  is_anonymous                Boolean                 @default(false)
+523:  identities                  identities[]
+524:  mfa_factors                 mfa_factors[]
+525:  mfa_recovery_code_sets      mfa_recovery_code_sets?
+526:  oauth_authorizations        oauth_authorizations[]
+527:  oauth_consents              oauth_consents[]
+528:  one_time_tokens             one_time_tokens[]
+529:  scim_users                  scim_users[]
+530:  sessions                    sessions[]
+531:  webauthn_challenges         webauthn_challenges[]
+532:  webauthn_credentials        webauthn_credentials[]
+533:  memberships                 memberships?
+534:  tenants                     tenants[]
+542:model webauthn_challenges {
+543:  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+544:  user_id        String?  @db.Uuid
+545:  challenge_type String
+546:  session_data   Json
+547:  created_at     DateTime @default(now()) @db.Timestamptz(6)
+548:  expires_at     DateTime @db.Timestamptz(6)
+549:  users          users?   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+556:model webauthn_credentials {
+557:  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+558:  user_id          String    @db.Uuid
+559:  credential_id    Bytes     @unique
+560:  public_key       Bytes
+561:  attestation_type String    @default("")
+562:  aaguid           String?   @db.Uuid
+563:  sign_count       BigInt    @default(0)
+564:  transports       Json      @default("[]")
+565:  backup_eligible  Boolean   @default(false)
+566:  backed_up        Boolean   @default(false)
+567:  friendly_name    String    @default("")
+568:  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+569:  updated_at       DateTime  @default(now()) @db.Timestamptz(6)
+570:  last_used_at     DateTime? @db.Timestamptz(6)
+571:  users            users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+578:model audit_log {
+579:  id            BigInt        @id @default(autoincrement())
+580:  org_id        String        @db.Uuid
+581:  actor_id      String?       @db.Uuid
+582:  action        String
+583:  entity_id     String?       @db.Uuid
+584:  details       Json          @default("{}")
+585:  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+586:  organizations organizations @relation(fields: [org_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+594:model gateway_bills {
+595:  id                                                        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+596:  org_id                                                    String        @db.Uuid
+597:  lease_id                                                  String        @db.Uuid
+598:  amount_sen                                                BigInt
+599:  status                                                    String        @default("pending")
+600:  currency                                                  String        @default("MYR") @db.Char(3)
+601:  created_by                                                String?       @db.Uuid
+602:  transaction_id                                            String?
+603:  transaction_status                                        String?
+604:  paid_at                                                   DateTime?     @db.Timestamptz(6)
+605:  created_at                                                DateTime      @default(now()) @db.Timestamptz(6)
+606:  updated_at                                                DateTime      @default(now()) @db.Timestamptz(6)
+607:  organizations                                             organizations @relation(fields: [org_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+608:  leases                                                    leases        @relation(fields: [org_id, lease_id], references: [org_id, id], onUpdate: NoAction)
+621:model invoices {
+622:  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+623:  org_id              String                @db.Uuid
+624:  lease_id            String                @db.Uuid
+625:  kind                String
+626:  period_index        Int?
+627:  period_start        DateTime?             @db.Date
+628:  period_end          DateTime?             @db.Date
+629:  due_date            DateTime              @db.Date
+630:  amount_sen          BigInt
+631:  currency            String                @default("MYR") @db.Char(3)
+632:  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+633:  organizations       organizations         @relation(fields: [org_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+634:  leases              leases                @relation(fields: [org_id, lease_id], references: [org_id, id], onUpdate: NoAction)
+635:  payment_allocations payment_allocations[]
+648:model leases {
+649:  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+650:  org_id              String                @db.Uuid
+651:  unit_id             String                @db.Uuid
+652:  tenant_id           String                @db.Uuid
+653:  start_date          DateTime              @db.Date
+654:  end_date            DateTime              @db.Date
+655:  monthly_rent_sen    BigInt
+656:  deposit_sen         BigInt
+657:  currency            String                @default("MYR") @db.Char(3)
+658:  created_by          String?               @db.Uuid
+659:  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+660:  gateway_bills       gateway_bills[]
+661:  invoices            invoices[]
+662:  organizations       organizations         @relation(fields: [org_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+663:  tenants             tenants               @relation(fields: [org_id, tenant_id], references: [org_id, id], onDelete: NoAction, onUpdate: NoAction)
+664:  units               units                 @relation(fields: [org_id, unit_id], references: [org_id, id], onDelete: NoAction, onUpdate: NoAction)
+665:  payment_allocations payment_allocations[]
+666:  payments            payments[]
+678:model memberships {
+679:  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+680:  user_id       String        @unique @db.Uuid
+681:  org_id        String        @db.Uuid
+682:  role          String
+683:  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+684:  organizations organizations @relation(fields: [org_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+685:  users         users         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+693:model organizations {
+694:  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+695:  name                String
+696:  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+697:  audit_log           audit_log[]
+698:  gateway_bills       gateway_bills[]
+699:  invoices            invoices[]
+700:  leases              leases[]
+701:  memberships         memberships[]
+702:  payment_allocations payment_allocations[]
+703:  payments            payments[]
+704:  tenants             tenants[]
+705:  units               units[]
+712:model payment_allocations {
+713:  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+714:  org_id        String        @db.Uuid
+715:  lease_id      String        @db.Uuid
+716:  payment_id    String        @db.Uuid
+717:  invoice_id    String        @db.Uuid
+718:  amount_sen    BigInt
+719:  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+720:  invoices      invoices      @relation(fields: [lease_id, invoice_id], references: [lease_id, id], onUpdate: NoAction)
+721:  payments      payments      @relation(fields: [lease_id, payment_id], references: [lease_id, id], onUpdate: NoAction)
+722:  organizations organizations @relation(fields: [org_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+723:  leases        leases        @relation(fields: [org_id, lease_id], references: [org_id, id], onUpdate: NoAction)
+735:model payments {
+736:  id                                                             String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+737:  org_id                                                         String                @db.Uuid
+738:  lease_id                                                       String                @db.Uuid
+739:  amount_sen                                                     BigInt
+740:  unapplied_sen                                                  BigInt                @default(0)
+741:  method                                                         String
+742:  status                                                         String
+743:  received_at                                                    DateTime              @db.Timestamptz(6)
+744:  slip_path                                                      String?               @unique
+745:  gateway_bill_id                                                String?               @unique @db.Uuid
+746:  idempotency_key                                                String?               @db.Uuid
+747:  currency                                                       String                @default("MYR") @db.Char(3)
+748:  recorded_by                                                    String?               @db.Uuid
+749:  decided_by                                                     String?               @db.Uuid
+750:  decided_at                                                     DateTime?             @db.Timestamptz(6)
+751:  reason                                                         String?
+752:  created_at                                                     DateTime              @default(now()) @db.Timestamptz(6)
+753:  payment_allocations                                            payment_allocations[]
+755:  organizations                                                  organizations         @relation(fields: [org_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+757:  leases                                                         leases                @relation(fields: [org_id, lease_id], references: [org_id, id], onUpdate: NoAction)
+771:model tenants {
+772:  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+773:  org_id        String        @db.Uuid
+774:  user_id       String?       @db.Uuid
+775:  full_name     String
+776:  email         String
+777:  phone         String?
+778:  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+779:  leases        leases[]
+780:  organizations organizations @relation(fields: [org_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+781:  users         users?        @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+791:model units {
+792:  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+793:  org_id        String        @db.Uuid
+794:  name          String
+795:  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+796:  leases        leases[]
+797:  organizations organizations @relation(fields: [org_id], references: [id], onDelete: NoAction, onUpdate: NoAction)

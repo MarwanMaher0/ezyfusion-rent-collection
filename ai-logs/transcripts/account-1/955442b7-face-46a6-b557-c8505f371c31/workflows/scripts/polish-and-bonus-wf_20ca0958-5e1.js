@@ -1,0 +1,31 @@
+export const meta = {
+  name: 'polish-and-bonus',
+  description: 'UI polish + create-lease form with live preview (backend options service first), allocation unit tests, then one reviewer',
+  phases: [{ title: 'Build' }, { title: 'Review' }],
+}
+const COMMON = `Timed build lane (feature freeze at 03:48Z). Working dir ./app. Source of truth ../BRIEF.md; ../SPEC.md; ../DECISIONS.md (D1-D63, all decided). The brief overrides CLAUDE.md where SPEC.md says so (error body {error: string}; status computed with invoiceStatus; MYT everywhere). One simple command per Bash call; never npm i; never commit; NEVER run supabase db reset; DB/test commands via bash ../scripts/with-db.sh <cmd>. Dev server runs at :3000 (hot reload; never start/kill it). Edit ONLY your listed files. Keep changes small and safe: tests are green now (1152) and must stay green.`
+const S = { type: 'object', properties: { status: { type: 'string' }, files_changed: { type: 'array', items: { type: 'string' } }, checks_run: { type: 'array', items: { type: 'string' } }, assumptions: { type: 'array', items: { type: 'string' } } }, required: ['status', 'files_changed', 'checks_run', 'assumptions'] }
+const R = { type: 'object', properties: { verdict: { type: 'string', enum: ['PASS', 'FAIL'] }, findings: { type: 'array', items: { type: 'object', properties: { severity: { type: 'string' }, file: { type: 'string' }, line: { type: 'string' }, problem: { type: 'string' }, fix: { type: 'string' } }, required: ['severity', 'file', 'problem', 'fix'] } } }, required: ['verdict', 'findings'] }
+
+phase('Build')
+const alloc = agent(`${COMMON}
+Task: bonus "Unit tests for allocation" (R26, R27, R24). Files you may edit: tests/unit/allocation.test.ts (new). Use tests/helpers (createFixtureOrg, db/newConnection; read tests/helpers/README.md). Exercise private.record_payment / approve_payment / void_payment / allocate_payment through pg as postgres inside BEGIN ... ROLLBACK (or on fixture leases), with describe names starting 'R26'. Cover: fill order due_date, deposit before rent on the same day, period_index; each invoice filled up to its unpaid amount before the next; invoices not yet due are filled too; partial fill leaves the next invoice partially paid; a manager payment equal to the whole balance pays everything with unapplied 0; an online payment (create_gateway_bill + apply_gateway_callback) larger than the remaining balance ends with unapplied_sen = the leftover; void deletes only that payment's allocations and other payments' allocations and unapplied_sen are unchanged (D14); a 0-sen rent invoice gets no allocation row; paidSen per invoice = Σ allocations and invoiceStatus over the result matches expectations; allocations never exceed an invoice's amount. Done means: bash ../scripts/with-db.sh npx vitest run tests/unit/allocation.test.ts passes; then the whole tests/unit passes.`,
+  { agentType: 'test-engineer', label: 'bonus:allocation-tests', phase: 'Build', schema: S })
+
+const be = await agent(`${COMMON}
+Task: backend support for the bonus create-lease form (R46, R56). Files you may edit: src/server/services/leases.ts. Add export async function leaseFormOptions(ctx: ServiceCtx): Promise<{ units: { id: string; name: string }[]; tenants: { id: string; fullName: string; email: string }[] }> — loadCaller, requireMember(['manager']) (others 403), returns the caller org's units and tenants (scoped by org_id), sorted by name. Do not change any existing function. Done means: tsc + eslint clean.`,
+  { agentType: 'backend-engineer', label: 'bonus:lease-options', phase: 'Build', schema: S })
+
+const ui = await agent(`${COMMON}
+Task: UI polish + bonus create-lease form (R49-R52, R56). Files you may edit: src/app/(app)/leases/new/** (new), src/app/(app)/leases/page.tsx, src/app/(app)/dashboard/**, src/components/staff/**, src/components/tenant/**, src/components/app-shell/**.
+1. Bonus: /leases/new (managers only; staff/tenant -> redirect to /leases or show 'Only managers can create leases'). Server component loads leaseFormOptions(ctx) from src/server/services/leases.ts (just added). Client form: unit select, tenant select, start date and end date (<input type="date">, YYYY-MM-DD strings — never new Date(string) in local time), monthly rent and deposit typed in ringgit parsed with parseRinggitToSen (deposit may be empty = 0). LIVE PREVIEW: as inputs change, call generateSchedule from src/lib/billing.ts in the browser (wrap in try/catch; show the thrown message as a helpful inline hint) and render the schedule table (kind, period, due date, amount with formatSen) plus the total. Submit POSTs /api/leases { unitId, tenantId, startDate, endDate, monthlyRentSen, depositSen } -> toast success and router.push('/leases/<id>'); 409 -> toast 'This unit already has a lease that overlaps these dates'; other errors -> toast the API's { error }. Loading state on the button. Add a 'New lease' button on /leases visible to managers.
+2. Polish (only what is cheap and safe): every page has a clear heading and an empty state; nav links in the header for staff/manager (Dashboard, Leases) and tenant (My tenancy); dashboard overdue count links to /leases; consistent RM formatting via formatSen; no Date rendering on the server that could differ on the client (R52).
+Done means: tsc + eslint clean (show output); curl /leases/new as unauthenticated -> 307; existing tests untouched.`,
+  { agentType: 'ui-builder', label: 'polish:ui-builder', phase: 'Build', schema: S })
+
+const a = await alloc
+phase('Review')
+const files = [...((be && be.files_changed) || []), ...((ui && ui.files_changed) || []), ...((a && a.files_changed) || [])]
+const rv = await agent(`${COMMON}\nRead-only review of the polish + bonus changes (uncommitted; git diff HEAD and untracked files): ${files.join(', ')}. Check: manager-only enforcement is server-side (POST /api/leases already enforces; the page must not be the only check), generateSchedule used for the preview exactly as the brief's contract, no local-time date parsing, parseRinggitToSen for amounts, toasts + loading states, no hydration risks, no secret in client code, no 'any', tests actually assert allocation rules. Concrete problems only. PASS or FAIL.`,
+  { agentType: 'reviewer', label: 'polish:review', phase: 'Review', schema: R })
+return { allocation: a, backend: be, ui, review: rv }

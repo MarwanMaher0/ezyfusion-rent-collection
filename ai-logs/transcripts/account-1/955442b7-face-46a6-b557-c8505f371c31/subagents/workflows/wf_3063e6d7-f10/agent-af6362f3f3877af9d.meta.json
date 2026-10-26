@@ -1,0 +1,1 @@
+{"agentType":"reviewer","isBuiltIn":false,"description":"critic:brief-vs-repo","workflowPhase":"Critic","spawnDepth":1,"requestShape":"foreground","requestNonInteractive":false}

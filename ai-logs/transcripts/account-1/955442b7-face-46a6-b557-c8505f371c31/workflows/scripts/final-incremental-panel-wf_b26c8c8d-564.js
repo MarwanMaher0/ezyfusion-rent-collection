@@ -1,0 +1,12 @@
+export const meta = {
+  name: 'final-incremental-panel',
+  description: 'Incremental security-auditor + reviewer on 58c030a..HEAD (slip cleanup route, return page move + login next, create-lease form/options)',
+  phases: [{ title: 'Panel' }],
+}
+const CTX = `Timed build, working dir ./app. Source of truth ../BRIEF.md; ../SPEC.md; ../DECISIONS.md. The brief overrides CLAUDE.md where SPEC.md says so. Scope: ONLY what changed since the last panel: git diff 58c030a..HEAD — src/app/api/leases/[leaseId]/payments/route.ts + src/server/services/payments.ts (cleanupRejectedSlip after pre-authorization failures), src/app/payments/** (return page moved out of the (app) group, new layout, ?next= redirect), src/components/app-shell/login-form.tsx (next param handling — open redirect?), src/app/(app)/leases/new/** + src/components/staff/new-lease-form.tsx + leaseFormOptions in src/server/services/leases.ts, header nav, src/app/layout.tsx. Stack is up and seeded (password RentDemo#2026); dev server http://127.0.0.1:3000. Read-only: never edit files, never reset the DB; any probe that writes uses the seeded probe@northwind.test lease only. One simple command per Bash call.`
+const F = { type: 'object', properties: { verdict: { type: 'string', enum: ['PASS', 'FAIL'] }, findings: { type: 'array', items: { type: 'object', properties: { severity: { type: 'string', enum: ['blocker', 'major', 'minor'] }, file: { type: 'string' }, line: { type: 'string' }, repro: { type: 'string' }, fix: { type: 'string' } }, required: ['severity', 'repro', 'fix'] } } }, required: ['verdict', 'findings'] }
+const s = agent(`${CTX}\nSecurity auditor, incremental run (GATES.md 3:15 rule: only items touched since the last run). Probe: can a failing payment request delete a slip in another org's folder or one already referenced by a payment; can an unauthenticated or tenant request delete anything; is /login?next= an open redirect (try //evil.com, /\\evil.com, https://evil.com, /%2F%2Fevil.com, javascript:); does /payments/return ever change state or leak another tenant's bill; is /leases/new or leaseFormOptions reachable by staff/tenant/other org; any secret in client code. Verdict PASS/FAIL.`,
+  { agentType: 'security-auditor', label: 'final:security-auditor', phase: 'Panel', schema: F })
+const r = agent(`${CTX}\nReviewer: review the scoped diff against the brief and the hard rules. Concrete problems only (with scenario). PASS or FAIL.`,
+  { agentType: 'reviewer', label: 'final:reviewer', phase: 'Panel', schema: F })
+return await Promise.all([s, r])
