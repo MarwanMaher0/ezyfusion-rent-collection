@@ -1,8 +1,9 @@
 import { z } from 'zod'
+import type { Prisma } from '@/generated/prisma/client'
 import { generateSchedule, type ScheduledInvoice } from '@/lib/billing'
 import { badRequest, forbidden, notFound, withRetry } from '@/lib/errors'
 import { prisma } from '@/lib/prisma'
-import { loadCaller, requireLeaseAccess, requireMember } from '@/server/access'
+import { loadCaller, requireLeaseAccess, requireMember, type Caller } from '@/server/access'
 import {
   compareAllocationOrder,
   isoDateToDb,
@@ -155,19 +156,91 @@ export async function leaseFormOptions(ctx: ServiceCtx): Promise<LeaseFormOption
 
 export type LeaseListItem = LeaseDto & { unitName: string; tenantName: string }
 
-// Leases list for the UI: staff/manager see their org's leases; a tenant sees only their own.
-export async function listLeases(ctx: ServiceCtx): Promise<LeaseListItem[]> {
-  const caller = await loadCaller(ctx.userId)
-  const or: ({ org_id: string } | { tenant_id: { in: string[] } })[] = []
+// Visibility shared by listLeases and listLeasesPage: staff/manager see their org's leases (scoped by the
+// org_id read from memberships), a tenant only their own (tenant ids from tenants.user_id); neither -> 403.
+function leaseVisibilityWhere(caller: Caller): Prisma.leasesWhereInput {
+  const or: Prisma.leasesWhereInput[] = []
   if (caller.member) or.push({ org_id: caller.member.orgId })
   if (caller.tenantIds.length > 0) or.push({ tenant_id: { in: caller.tenantIds } })
   if (or.length === 0) throw forbidden()
+  return { OR: or }
+}
+
+const LIST_INCLUDE = { units: { select: { name: true } }, tenants: { select: { full_name: true } } } as const
+
+type LeaseListRow = Prisma.leasesGetPayload<{ include: typeof LIST_INCLUDE }>
+
+function toListItem(row: LeaseListRow): LeaseListItem {
+  return { ...serializeLease(row), unitName: row.units.name, tenantName: row.tenants.full_name }
+}
+
+// Leases list for the UI: staff/manager see their org's leases; a tenant sees only their own.
+export async function listLeases(ctx: ServiceCtx): Promise<LeaseListItem[]> {
+  const caller = await loadCaller(ctx.userId)
   const rows = await prisma.leases.findMany({
-    where: { OR: or },
-    include: { units: { select: { name: true } }, tenants: { select: { full_name: true } } },
+    where: leaseVisibilityWhere(caller),
+    include: LIST_INCLUDE,
     orderBy: [{ start_date: 'asc' }, { id: 'asc' }],
   })
   return rows
-    .map((row) => ({ ...serializeLease(row), unitName: row.units.name, tenantName: row.tenants.full_name }))
+    .map(toListItem)
     .sort((a, b) => (a.unitName === b.unitName ? 0 : a.unitName < b.unitName ? -1 : 1))
+}
+
+export type LeasePage = { items: LeaseListItem[]; total: number; page: number; pageSize: number; pageCount: number; q: string }
+
+const DEFAULT_PAGE_SIZE = 10
+const MAX_PAGE_SIZE = 50
+
+// URL params are untrusted: only a plain positive integer counts; anything else (decimal, 0, negative,
+// "1e1", empty, out of range) falls back to the default instead of erroring, so a bad link still renders.
+function parsePositiveInt(v: string | number | null | undefined, fallback: number, max: number): number {
+  let n: number
+  if (typeof v === 'number') n = v
+  else if (typeof v === 'string' && /^\d+$/.test(v.trim())) n = Number(v.trim())
+  else return fallback
+  return Number.isSafeInteger(n) && n >= 1 && n <= max ? n : fallback
+}
+
+// Server-side paginated + searched leases list (bonus R56). Same visibility as listLeases; the ?q= filter
+// and skip/take run in the DB under the SAME where as the count, so total and items always agree.
+export async function listLeasesPage(
+  ctx: ServiceCtx,
+  params: { q?: string | null; page?: string | number | null; pageSize?: string | number | null },
+): Promise<LeasePage> {
+  const caller = await loadCaller(ctx.userId)
+  const visibility = leaseVisibilityWhere(caller)
+  const q = typeof params.q === 'string' ? params.q.trim() : ''
+  const pageSize = parsePositiveInt(params.pageSize, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE)
+  const requestedPage = parsePositiveInt(params.page, 1, Number.MAX_SAFE_INTEGER)
+
+  // Prisma's `contains` escapes LIKE wildcards, so a q of "%" or "_" matches literally.
+  const where: Prisma.leasesWhereInput =
+    q === ''
+      ? visibility
+      : {
+          AND: [
+            visibility,
+            {
+              OR: [
+                { units: { name: { contains: q, mode: 'insensitive' } } },
+                { tenants: { full_name: { contains: q, mode: 'insensitive' } } },
+              ],
+            },
+          ],
+        }
+
+  const total = await prisma.leases.count({ where })
+  const pageCount = Math.max(1, Math.ceil(total / pageSize))
+  // A page past the end clamps to the last page (page 1 when there are no rows).
+  const page = Math.min(requestedPage, pageCount)
+  const rows = await prisma.leases.findMany({
+    where,
+    include: LIST_INCLUDE,
+    // id as the final key makes the order total, so pages never overlap or skip rows.
+    orderBy: [{ units: { name: 'asc' } }, { start_date: 'asc' }, { id: 'asc' }],
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  })
+  return { items: rows.map(toListItem), total, page, pageSize, pageCount, q }
 }
