@@ -164,7 +164,8 @@ describe("R34 R33 forged or missing signatures -> 401, no effect", () => {
     for (const r of rs) expect(r.status).toBe(401);
   });
 
-  it("duplicate keys in the body -> 4xx (SPEC: 400), never 500, no effect", async () => {
+  // D52: a repeated key makes the signed source ambiguous, so it is a signature failure (401), not a 400.
+  it("duplicate keys in the body (a field, the id, x_signature itself) -> 401 { error }, no effect (D52)", async () => {
     const { bill } = await freshBill();
     const good = signedCallback(bill.billId, bill.amountSen, true, { transaction_id: tx() });
     const pairs = Object.entries(good);
@@ -173,7 +174,10 @@ describe("R34 R33 forged or missing signatures -> 401, no effect", () => {
       hook([["id", randomUUID()], ...pairs]),
       hook([...pairs, ["x_signature", good.x_signature]]),
     ]);
-    for (const r of rs) expect([400, 401]).toContain(r.status);
+    for (const r of rs) {
+      expect(r.status).toBe(401);
+      expectErrorBody(r);
+    }
     expect((await billRow(bill.billId)).status).toBe("pending");
     expect(await billPayments(bill.billId)).toHaveLength(0);
   });

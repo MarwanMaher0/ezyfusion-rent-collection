@@ -60,6 +60,22 @@ async function removeOrphanSlip(path: string, orgId: string): Promise<void> {
   }
 }
 
+// R20: for a request that failed anywhere (the route's pre-authorization, JSON parsing, validation, recording)
+// best-effort delete the slip named in the raw body. Scope is the caller's own org only; an unmatched caller
+// (tenant, no membership) has no org folder to scope by, so nothing is deleted. Never throws.
+export async function cleanupRejectedSlip(ctx: ServiceCtx, rawBody: string | null): Promise<void> {
+  if (rawBody === null) return
+  try {
+    const parsed: unknown = JSON.parse(rawBody)
+    if (typeof parsed !== 'object' || parsed === null || !('slipPath' in parsed) || typeof parsed.slipPath !== 'string') return
+    const caller = await loadCaller(ctx.userId)
+    if (!caller.member || (caller.member.role !== 'manager' && caller.member.role !== 'staff')) return
+    await removeOrphanSlip(parsed.slipPath, caller.member.orgId)
+  } catch (e) {
+    console.error('[payments] slip cleanup failed', { name: e instanceof Error ? e.name : typeof e })
+  }
+}
+
 async function requireRecorder(caller: Caller, leaseId: string): Promise<{ orgId: string; leaseId: string }> {
   // R1/R38: staff/manager of the lease's org; the lease's tenant -> 403; anyone else -> 404.
   const lease = await requireLeaseAccess(caller, leaseId, ['manager', 'staff'])
@@ -91,7 +107,8 @@ export async function recordPayment(
       : null
 
   try {
-    // Authorization sits inside the cleanup try: a 404/403 on the lease must not leave the uploaded slip behind.
+    // Authorization sits inside this try so a service caller that skips the route's pre-check still gets
+    // cleanup on 404/403. The route pre-authorizes outside it (D42), so it calls cleanupRejectedSlip itself.
     const { orgId, leaseId: checkedLeaseId } = await requireRecorder(caller, leaseId)
 
     const key = opts?.idempotencyKey

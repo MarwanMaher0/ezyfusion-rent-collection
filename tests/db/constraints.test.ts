@@ -326,10 +326,10 @@ describe("R20 R21 R24 R25 payments: checks, composite FKs, append-only guard", (
   });
 
   // D51: service_role has no DELETE grant (42501); the append-only trigger (P0409) is the second line.
-  it("DELETE of a payment raises as service_role too", async () => {
-    expect(["42501", "P0409"]).toContain(
+  it("DELETE of a payment as service_role is refused by the grant (42501, D51)", async () => {
+    expect(
       await codeOf("delete from public.payments where id = $1", [approvedId], [{ text: "set local role service_role" }]),
-    );
+    ).toBe("42501");
   });
 
   it("TRUNCATE payments raises", async () => {
