@@ -21,8 +21,8 @@ export function HeaderNav({ links }: { links: NavLink[] }) {
             href={l.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              active ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
+              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              active ? "bg-muted text-foreground underline decoration-2 underline-offset-8" : "text-muted-foreground hover:text-foreground",
             )}
           >
             {l.label}

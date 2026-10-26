@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { RefreshButton } from "@/components/tenant/refresh-button";
 import { Badge } from "@/components/ui/badge";
+import { TONE } from "@/components/staff/labels";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ApiError } from "@/lib/errors";
@@ -57,7 +58,7 @@ export default async function PaymentReturnPage({
         {bill ? (
           <>
             <div className="flex items-center gap-2">
-              <Badge variant={bill.status === "paid" ? "default" : bill.status === "failed" ? "destructive" : "secondary"}>
+              <Badge variant="outline" className={TONE[bill.status === "paid" ? "green" : bill.status === "failed" ? "red" : "amber"]}>
                 {bill.status === "paid" ? "Paid" : bill.status === "failed" ? "Failed" : "Pending"}
               </Badge>
               <p className="text-sm" data-testid="bill-status-message">
@@ -68,7 +69,7 @@ export default async function PaymentReturnPage({
               <dt className="text-muted-foreground">Bill id</dt>
               <dd className="font-mono break-all">{bill.billId}</dd>
               <dt className="text-muted-foreground">Amount</dt>
-              <dd>{formatSen(bill.amountSen)}</dd>
+              <dd className="tabular-nums">{formatSen(bill.amountSen)}</dd>
             </dl>
           </>
         ) : (

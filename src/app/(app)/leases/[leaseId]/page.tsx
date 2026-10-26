@@ -9,6 +9,7 @@ import {
   InvoiceStatusBadge,
   methodLabel,
   PaymentStatusBadge,
+  paymentAmountClass,
 } from "@/components/staff/labels";
 import {
   Card,
@@ -197,7 +198,7 @@ async function LeaseDetail({
                       {formatMytDisplay(parseInstantWithOffset(p.receivedAt))}
                     </TableCell>
                     <TableCell>{methodLabel(p.method)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatSen(p.amountSen)}</TableCell>
+                    <TableCell className={`text-right tabular-nums ${paymentAmountClass(p.status)}`}>{formatSen(p.amountSen)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatSen(p.unappliedSen)}</TableCell>
                     <TableCell>
                       <PaymentStatusBadge status={p.status} />

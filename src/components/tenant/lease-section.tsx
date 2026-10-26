@@ -24,6 +24,7 @@ import { invoiceStatus, toMytDate, type InvoiceStatus } from "@/lib/billing";
 import { formatMytDisplay } from "@/lib/dates";
 import { formatSen } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { TONE, type Tone } from "@/components/staff/labels";
 
 export type LeaseView = {
   id: string;
@@ -62,11 +63,18 @@ const STATUS_LABEL: Record<InvoiceStatus, string> = {
   overdue: "Overdue",
 };
 
-const STATUS_BADGE: Record<InvoiceStatus, "default" | "secondary" | "destructive" | "outline"> = {
-  paid: "default",
-  partially_paid: "secondary",
-  unpaid: "outline",
-  overdue: "destructive",
+const STATUS_BADGE: Record<InvoiceStatus, Tone> = {
+  paid: "green",
+  partially_paid: "amber",
+  unpaid: "grey",
+  overdue: "red",
+};
+
+const PAYMENT_TONE: Record<PaymentView["status"], Tone> = {
+  pending_verification: "amber",
+  approved: "green",
+  rejected: "grey",
+  voided: "grey",
 };
 
 const PAYMENT_STATUS_LABEL: Record<PaymentView["status"], string> = {
@@ -148,17 +156,17 @@ export function LeaseSection({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border-2 border-primary/40 bg-primary/5 p-5">
           <div>
             <p className="text-sm text-muted-foreground">Amount due now</p>
-            <p className="text-2xl font-semibold" data-testid="amount-due-now">
+            <p className="text-3xl font-semibold tabular-nums" data-testid="amount-due-now">
               {formatSen(dueNowSen)}
             </p>
             {dueNowSen === 0 && (
               <p className="text-sm text-muted-foreground">Nothing is due right now.</p>
             )}
           </div>
-          <Button onClick={payNow} disabled={dueNowSen === 0 || creating}>
+          <Button size="lg" onClick={payNow} disabled={dueNowSen === 0 || creating}>
             {creating ? "Creating bill..." : "Pay now"}
           </Button>
         </div>
@@ -174,11 +182,16 @@ export function LeaseSection({
             <CardContent className="flex flex-col gap-3 text-sm">
               <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
                 <dt className="text-muted-foreground">Bill id</dt>
-                <dd className="font-mono break-all" data-testid="bill-id">
-                  {bill.billId}
+                <dd className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono break-all" data-testid="bill-id">
+                    {bill.billId}
+                  </span>
+                  <Button type="button" size="sm" variant="outline" onClick={() => copyBillId(bill.billId)}>
+                    Copy
+                  </Button>
                 </dd>
                 <dt className="text-muted-foreground">Amount</dt>
-                <dd>{formatSen(bill.amountSen)}</dd>
+                <dd className="tabular-nums">{formatSen(bill.amountSen)}</dd>
               </dl>
               <div>
                 <p className="mb-1 text-muted-foreground">Simulate the gateway callback:</p>
@@ -220,10 +233,10 @@ export function LeaseSection({
                       {inv.periodStart && inv.periodEnd ? `${inv.periodStart} to ${inv.periodEnd}` : "-"}
                     </TableCell>
                     <TableCell>{inv.dueDate}</TableCell>
-                    <TableCell className="text-right">{formatSen(inv.amountSen)}</TableCell>
-                    <TableCell className="text-right">{formatSen(paidSen)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatSen(inv.amountSen)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatSen(paidSen)}</TableCell>
                     <TableCell>
-                      <Badge variant={STATUS_BADGE[status]}>{STATUS_LABEL[status]}</Badge>
+                      <Badge variant="outline" className={TONE[STATUS_BADGE[status]]}>{STATUS_LABEL[status]}</Badge>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -251,9 +264,9 @@ export function LeaseSection({
                   <TableRow key={p.id}>
                     <TableCell>{formatMytDisplay(new Date(p.receivedAt))}</TableCell>
                     <TableCell>{METHOD_LABEL[p.method]}</TableCell>
-                    <TableCell className="text-right">{formatSen(p.amountSen)}</TableCell>
+                    <TableCell className={cn("text-right tabular-nums", (p.status === "rejected" || p.status === "voided") && "line-through text-muted-foreground")}>{formatSen(p.amountSen)}</TableCell>
                     <TableCell>
-                      <Badge variant={p.status === "approved" ? "default" : p.status === "pending_verification" ? "secondary" : "outline"}>
+                      <Badge variant="outline" className={TONE[PAYMENT_TONE[p.status]]}>
                         {PAYMENT_STATUS_LABEL[p.status]}
                       </Badge>
                     </TableCell>
@@ -266,6 +279,15 @@ export function LeaseSection({
       </CardContent>
     </Card>
   );
+}
+
+async function copyBillId(id: string) {
+  try {
+    await navigator.clipboard.writeText(id);
+    toast.success("Bill id copied");
+  } catch {
+    toast.error("Could not copy the bill id");
+  }
 }
 
 function isCreatedBill(v: unknown): v is CreatedBill {
