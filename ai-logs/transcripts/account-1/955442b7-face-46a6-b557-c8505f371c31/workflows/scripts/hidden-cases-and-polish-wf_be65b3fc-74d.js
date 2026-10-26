@@ -1,0 +1,23 @@
+export const meta = {
+  name: 'hidden-cases-and-polish',
+  description: 'Hidden-case fixes: flip storage read tests (D74) + input edge-case tests (D75); parallel visual-only UI polish pass',
+  phases: [{ title: 'Tests' }, { title: 'Polish' }],
+}
+const COMMON = `Timed build lane. HARD deadline 04:17Z — stop and report what you have by then. Working dir ./app. ../SPEC.md, ../DECISIONS.md (D74, D75). One simple command per Bash call; never npm i; never commit; NEVER db reset; DB/test commands via bash ../scripts/with-db.sh <cmd>. Dev server at :3000 (never start/kill). Edit ONLY your listed files.`
+const S = { type: 'object', properties: { status: { type: 'string' }, files_changed: { type: 'array', items: { type: 'string' } }, checks_run: { type: 'array', items: { type: 'string' } }, assumptions: { type: 'array', items: { type: 'string' } } }, required: ['status', 'files_changed', 'checks_run', 'assumptions'] }
+const tests = agent(`${COMMON}
+Task (test-authz). Files: tests/storage/slips.test.ts, tests/rls/catalog.test.ts, tests/authz/edge-inputs.test.ts (new).
+1. D74 (migration 20261026000005_slip_read.sql is already applied to the running DB): flip the D50 assertions. catalog: storage.objects has exactly two policies for payment-slips — INSERT and SELECT to authenticated, both using private.can_upload_slip(name); no UPDATE/DELETE/ALL. slips.test.ts: own-org staff AND manager CAN download and createSignedUrl (short expiresIn, e.g. 60) with their own token and the URL returns the bytes; tenant, another org's staff/manager and anon still cannot read, list, sign or upload; keep the secret-key 60 s URL positive control.
+2. D75 in tests/authz/edge-inputs.test.ts (describe 'R39 R45 D75 edge inputs'), on fixture orgs (tests/helpers createFixtureOrg, api): POST /api/leases with unitId '11111111-1111-1111-1111-111111111111' (well-formed, nonexistent, not RFC version) -> 404 (not 400), same for tenantId; POST /api/leases/:id/payments as staff with { amountSen: 100, method: 'cash', receivedAt: <now ISO>, slipPath: null } -> 201; bank_transfer with slipPath null -> 400; header 'Idempotency-Key: ' (blank/spaces) -> treated as no key (201, and a second identical request creates a second payment); 'Idempotency-Key: abc' -> 400.
+Done means: bash ../scripts/with-db.sh npx vitest run tests/storage tests/rls/catalog.test.ts tests/authz/edge-inputs.test.ts passes (show counts). App bugs -> report, never weaken.`,
+  { agentType: 'test-authz', label: 'hc:tests', phase: 'Tests', schema: S })
+const ui = agent(`${COMMON}
+Task (ui-builder): a VISUAL-ONLY polish pass. Files: src/components/** (incl. ui via existing components only), src/app/(app)/**/page.tsx, src/app/(app)/layout.tsx, src/app/login/**, src/app/payments/**, src/app/globals.css. HARD RULES: presentation only — do not change routes, services, SQL, auth, data fetching, form submission logic, request bodies or props passed to services; keep Malaysia time formatted by hand (formatMytDisplay / YYYY-MM-DD strings, no Intl) and keep every 'now' computed after mount or passed from the server (no hydration warnings); keep every existing text that tests or pages may rely on (headings, button labels like 'Record payment', 'Approve', 'Reject', 'Void', 'Pay now', 'Showing X–Y of N'). Small, safe changes only, in this priority order, stop at 04:17Z:
+ (a) status badges with fixed colours AND text everywhere: invoice paid green, partially_paid amber, unpaid grey, overdue red; payment pending_verification amber, approved green, rejected/voided grey with the amount struck through;
+ (b) every money amount right-aligned with tabular-nums (class 'tabular-nums text-right') in tables and summary cards; dates shown as stored YYYY-MM-DD strings or a hand-built '31 Jan 2026' (no Intl), instants via formatMytDisplay + ' MYT';
+ (c) app shell: header shows the user's role as a badge next to the email (role is already available where the header is rendered, or skip if it would need a new data fetch), active nav state, one container width and padding;
+ (d) tables wrapped in an overflow-x-auto container so pages work at 375 px; visible focus rings (focus-visible:ring) on custom buttons/links;
+ (e) tenant portal: make 'Amount due now' the prominent card at the top with Pay now; gateway bill card gets a Copy button for the bill id (navigator.clipboard.writeText, toast on success/failure).
+Done means: npx tsc --noEmit and npx eslint . --max-warnings=0 clean; curl -s -o /dev/null -w '%{http_code}' for /login (200), /leases (307), /tenant (307). Report exactly which of (a)-(e) you finished.`,
+  { agentType: 'ui-builder', label: 'polish:ui', phase: 'Polish', schema: S })
+return { tests: await tests, ui: await ui }
