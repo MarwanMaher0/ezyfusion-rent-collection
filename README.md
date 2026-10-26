@@ -1,7 +1,21 @@
 # Rent Collection — EzyFusion technical assessment
 
+License: all rights reserved, see [LICENSE](LICENSE) (viewing, running and evaluating for the EZYFusion assessment only).
+
 Part of a rent collection module for Malaysian property managers: leases, invoices, cash / bank-transfer / online payments, and access control for manager / staff / tenant.
 Stack: Next.js 16 (App Router) + TypeScript, local Supabase (Postgres, Auth, Storage, RLS), Prisma 7, shadcn/ui + Tailwind.
+
+## Summary
+- **Works:**
+  - Every route in the brief: leases, payments (record, approve, reject, void), gateway bills, the signed webhook, the collections report.
+  - `src/lib/billing.ts`, exactly as the brief specifies.
+  - RLS and grants that match the brief's Data API matrix; the private `payment-slips` bucket.
+  - Seeding through the app's own services.
+  - Staff/manager UI (dashboard, leases, lease page, record payment with slip upload, approve/reject/void) and the tenant portal (Pay now, phone edit, read-only `/payments/return`).
+  - Bonus: a manager create-lease form with a live schedule preview, unit tests for `billing.ts` and for allocation, and a server-side `?q=` search on the leases list.
+  - About 1160 tests, which pass under three timezones.
+- **Skipped / limits:** see [Known issues](#known-issues--skipped).
+- **AI logs:** every Claude Code session and subagent transcript is in `ai-logs/`. The decisions I made, and the corrections I gave the AI, are in `DECISIONS.md` (Part C question 6).
 
 ## Prerequisites
 - Node.js >= 20 (tested on 20.20.1), npm 10
@@ -40,11 +54,20 @@ npm run build && npm start  # http://localhost:3000
 | chen@beta.test | tenant | Beta Realty |
 
 ## Tests
-With the stack running, the DB reset + seeded, and the dev server on :3000 (`npm run dev`; the test setup starts one on :3100 if nothing answers):
+With the stack running and the DB reset (the test setup runs `npm run seed` itself if the seeded accounts are missing), and the dev server on :3000 (`npm run dev`; the test setup starts one on :3100 if nothing answers):
 ```bash
-npm test          # vitest: unit (billing), contract, RLS/Data API, storage, authz, concurrency, webhook
+npm test          # ~1150 vitest tests against the real local stack (no mocks)
 npm run test:tz   # the whole suite under TZ=UTC, Asia/Kuala_Lumpur and America/New_York
 ```
+| folder | what it proves |
+|---|---|
+| `tests/unit` | `billing.ts` (brief's worked example, anchors/clamping, leap years, proration half-up, validation, the 16:00Z overdue boundary, ringgit parser), dates, money, error mapping, allocation |
+| `tests/contract` | every route's status codes and exact JSON shapes; the seed facts (e.g. collections 2026-01..03 = `[300000, 0, 200000]`) |
+| `tests/rls`, `tests/db`, `tests/storage` | RLS on every table, grants, no callable functions, the Data API matrix per role, DB constraints and append-only triggers, the `payment-slips` bucket policies and slip cleanup |
+| `tests/authz` | 401 / 403 / 404 per route per seeded role, cross-org ids in bodies, cookie + Bearer, `user_metadata` escalation |
+| `tests/concurrency`, `tests/webhook` | cap races, double approve, overlapping leases at the same moment, idempotency, every row of the webhook table, 10 simultaneous duplicate callbacks, MYT midnight boundary of the amount due |
+
+Tests create their own fixture organizations and never delete them (payments and `audit_log` are append-only), so run `npx supabase db reset` before `npm run seed` if you want a database with only the brief's data.
 
 ## Firing the sample webhook
 Create a bill as a tenant (Pay now in the tenant portal, or `POST /api/leases/:leaseId/gateway-bills`), then:
@@ -68,7 +91,14 @@ More: `DECISIONS.md` (Part C answers + decision log), `REVIEW.md` (Part B), `doc
 - `npm run seed` says the database is not fresh: run `npx supabase db reset` first.
 
 ## Known issues / skipped
-_(filled in at the end of the build)_
+- **Bonus items skipped:** realtime updates on the tenant portal (the return page has a "Refresh status" button instead) and pagination of the leases list (there is a server-side `?q=` search only).
+- **Slip cleanup edge cases (R20):** a failed recording deletes the uploaded slip when the request reaches the server and names it. Two narrow cases can still leave an unreferenced file in the organization's own folder: the network drops between the upload and the POST, or the POST body is not valid JSON so the path cannot be read. A second, concurrent request reusing the same slip path can also delete a slip that a not-yet-committed recording uses (D46). A periodic sweeper (delete objects older than N minutes that no `payments.slip_path` references) would close all three.
+- **UI checks:** no browser automation was used. The UI was reviewed from the code and with HTTP requests as every role. Hydration-safety rules: Malaysia time is formatted by hand, with no `Intl`, and "now"-dependent values are computed after mount or passed from the server.
+- **Credit after a void:** when a void reopens invoices, unapplied online money on other payments is not re-applied automatically (D14, Part C question 5).
+- **Owner-level tampering:** the append-only triggers on `audit_log` and payments stop UPDATE, DELETE and TRUNCATE for every role, including the owner and `service_role`, but the database owner could still run `ALTER TABLE … DISABLE TRIGGER` (D33).
 
 ## What I would do next
-_(filled in at the end of the build)_
+- A slip sweeper job, and an explicit, audited "apply credit" action for unapplied online money.
+- Realtime (Supabase channel on `payments` for the tenant's leases) and pagination on the leases list.
+- Playwright tests for the UI flows in two browser timezones, plus hydration-warning checks.
+- Late fees, if the business wants them, as one locked plpgsql function with a UNIQUE (invoice) constraint (see REVIEW.md for what goes wrong otherwise).
