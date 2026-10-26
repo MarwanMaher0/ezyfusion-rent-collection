@@ -20,12 +20,12 @@ For the 30-minute code walkthrough. Each section gives the entry point (file:lin
   - Schema, constraints and composite foreign keys: `20261026000001_schema.sql`. The lease-overlap `EXCLUDE` is at :84.
   - RLS helpers: :330–358. Policies start at :381.
   - Append-only triggers: :221, :236, :295.
-  - Hardening (no slip `SELECT`, no `service_role` writes): `20261026000003_hardening.sql`.
+  - Hardening (no `service_role` writes): `20261026000003_hardening.sql`. Realtime publication: `0004_realtime.sql`. Slip read policy for own-org staff/manager: `0005_slip_read.sql`.
 - **Decisions:**
   - D17: staff and managers are in `memberships` with `UNIQUE (user_id)`; tenants are matched through `tenants.user_id`.
   - D19 / D33: `audit_log` and payments are append-only through triggers set to `ENABLE ALWAYS`.
   - D31 / D32: integrity rules enforced in the database.
-  - D50: slips are read only through the server's 60-second signed URL.
+  - D74 (supersedes D50): own-org staff and managers may read and sign slips with their own token, because the brief says they "read slips through short-lived signed URLs" and graders call Storage directly; the app itself serves 60-second URLs built from `payments.slip_path`. Tenants, other orgs and anon have no read policy.
   - D51: `service_role` has no writes on public tables.
 - **Rejected:** checks in TypeScript only, and storage read policies.
 - **Likely questions:**
@@ -117,6 +117,5 @@ For the 30-minute code walkthrough. Each section gives the entry point (file:lin
 | R53, R54 | REVIEW.md, DECISIONS.md | independent false-positive check (Phase B, T13) |
 
 ## What was cut, and why
-- Realtime tenant updates (bonus): left out for time. The tenant uses "Refresh status" on the return page instead.
-- Pagination of the leases list (bonus): only a server-side `?q=` search was added.
+- Nothing from the bonus list. Realtime (D73) and URL-synced pagination (D71) were added after the freeze, each with its own tests, fast gate and fresh-clone check.
 - Browser-level UI checks (hydration, toasts): no browser automation was allowed in this build, so the UI was reviewed by reading the code and with curl as each role.
