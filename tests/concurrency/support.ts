@@ -50,7 +50,9 @@ export async function waitForBlockedBy(
         where $1::int = any(pg_blocking_pids(pid))`,
       [holderPid],
     );
-    if (rows.length > 0) return rows[0];
+    // pg_blocking_pids can list the waiter a moment before pg_stat_activity shows its wait event, so
+    // keep polling until both agree (still a condition, not a timed sleep).
+    if (rows.length > 0 && rows[0].wait_event_type === "Lock") return rows[0];
     await new Promise((r) => setImmediate(r));
   }
   throw new Error(`no backend became blocked by pid ${holderPid} within ${timeoutMs} ms`);
