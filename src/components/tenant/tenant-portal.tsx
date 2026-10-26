@@ -131,6 +131,8 @@ export function TenantPortal() {
   // "now" exists only on the client after mount, so statuses never differ between server and browser (R52).
   const [now, setNow] = useState<Date | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // Stays true after the first successful load so the realtime channel is not torn down by a manual reload().
+  const [loadedOnce, setLoadedOnce] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,6 +140,7 @@ export function TenantPortal() {
       .then((d) => {
         if (cancelled) return;
         setData(d);
+        setLoadedOnce(true);
         setNow(new Date());
         setFailed(false);
       })
@@ -150,6 +153,31 @@ export function TenantPortal() {
       cancelled = true;
     };
   }, [reloadKey]);
+
+  // Live updates: a webhook writes bill + payment + allocations in a burst, so events are debounced into one silent
+  // refetch (data is not cleared, so no skeleton flash). RLS limits the change feed to the tenant's own leases.
+  useEffect(() => {
+    if (!loadedOnce) return;
+    const supabase = createClient();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onChange = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = undefined;
+        toast("Payment status updated");
+        setReloadKey((k) => k + 1);
+      }, 300);
+    };
+    const channel = supabase
+      .channel("tenant-portal")
+      .on("postgres_changes", { event: "*", schema: "public", table: "payments" }, onChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "gateway_bills" }, onChange)
+      .subscribe();
+    return () => {
+      if (timer) clearTimeout(timer);
+      void supabase.removeChannel(channel);
+    };
+  }, [loadedOnce]);
 
   function reload() {
     setData(null);
