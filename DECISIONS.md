@@ -36,9 +36,9 @@ I chose this because the brief says "Other payments' allocations do not change".
 It also keeps a void predictable and auditable: the `payment.voided` audit row records exactly what was released, and nothing else changes. Staff can see both the reopened balance and the credit on the lease page. Applying credit to reopened invoices would be an explicit, audited manager action, which I would add next.
 
 ## 6. Two things the AI assistant got wrong, and how I noticed
-1. **Empty months in the collections report.** The spec Claude drafted at hard stop (a) listed the report but never said that months with nothing collected must appear. Reviewing it against the brief's seed example `[300000, 0, 200000]`, I required `generate_series` over Malaysia months (D25, my approval message at hard stop a; implemented in src/server/services/reports.ts:26-49).
-2. **Relying on Next.js not to inline the secret key.** The plan had services import the secret-key client from a file without a `server-only` marker (D44). A leaked secret key is an instant fail, so I required a build-time scan of `.next/static` for the key's value as a gate step (D47, my message at hard stop b).
-3. Smaller: the seed password `RentDemo#2026` was written unquoted, and dotenv cut it at `#`. My review agent caught it (Phase A, T5 review).
+1. **Empty months in the collections report.** Claude's spec at hard stop (a) listed the report but never said that months with nothing collected must appear. Checking it against the brief's `[300000, 0, 200000]`, I required `generate_series` over Malaysia months (D25; src/server/services/reports.ts:26-49). Logs: ai-logs/session-lead.md:1096-1121 (my reply); ai-logs/helper-session.md:1399 (where my helper session flagged it).
+2. **Trusting Next.js not to inline the secret key.** Services imported the secret-key client from a file without `server-only` (D44). I required a `.next/static` scan for the key as a gate step (D47). Logs: session-lead.md:2249-2265; helper-session.md:1543.
+3. Smaller: `RentDemo#2026` was unquoted, so dotenv cut it at `#`. My T5 review agent caught it (ai-logs/transcripts/…/wf_9455663c-338/agent-a79550fa7e1e1f949.jsonl); fix at session-lead.md:1930-1940.
 
 ---
 
@@ -113,4 +113,4 @@ D65 · Bonus allocation tests run inside BEGIN … ROLLBACK on fixture leases (p
 D66 · No loading.tsx on /leases/new (same reason as D61: it would flush 200 before the manager check) · real redirects/403s · route-level skeleton · Marwan  
 D67 · Root layout types its props explicitly ({ children: React.ReactNode }) instead of Next's generated global LayoutProps · the fresh-clone check runs tsc before next build, when .next/types does not exist yet · keep LayoutProps and type-check only after a build · Marwan  
 D68 · Submission: public GitHub repo MarwanMaher0/ezyfusion-rent-collection created with gh and pushed at the end (after the final gate + ai-logs export) · brief: public repo with full history · push mid-build · Marwan  
-D69 · Slip cleanup may run twice on a failure inside recordPayment (service catch + route catch); both are idempotent (orphan check + remove) · accepted for now: correctness first, two extra round-trips only on failures · single cleanup owner (would need a service option) · pending  
+D69 · Slip cleanup may run twice on a failure inside recordPayment (service catch + route catch); both are idempotent (orphan check + remove) · accepted for now: correctness first, two extra round-trips only on failures · single cleanup owner (would need a service option) · Marwan  
