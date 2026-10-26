@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   description: "Rent collection for property managers and tenants",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
