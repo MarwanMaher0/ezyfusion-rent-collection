@@ -13,9 +13,13 @@ Stack: Next.js 16 (App Router) + TypeScript, local Supabase (Postgres, Auth, Sto
   - Seeding through the app's own services.
   - Staff/manager UI (dashboard, leases, lease page, record payment with slip upload, approve/reject/void) and the tenant portal (Pay now, phone edit, read-only `/payments/return`).
   - Bonus: a manager create-lease form with a live schedule preview, unit tests for `billing.ts` and for allocation, and a server-side `?q=` search on the leases list.
-  - About 1160 tests, which pass under three timezones.
+  - About 1180 tests, which pass under three timezones.
 - **Skipped / limits:** see [Known issues](#known-issues--skipped).
-- **AI logs:** every Claude Code session and subagent transcript is in `ai-logs/`. The decisions I made, and the corrections I gave the AI, are in `DECISIONS.md` (Part C question 6).
+- **AI logs (`ai-logs/`):**
+  - `session-lead.md`: the readable `/export` of the main Claude Code session (the lead engineer).
+  - `transcripts/`: the raw JSONL transcripts of that session and of every subagent and workflow agent (database, backend, test, review, security lanes).
+  - `helper-session.md`: a redacted export of the second Claude session I used alongside (planning, reading the brief from the portal, reviewing at the hard stops).
+  - The decisions I made, and the corrections I gave the AI, are in `DECISIONS.md` (Part C question 6) and in my hard-stop answers (D7, D10).
 
 ## Prerequisites
 - Node.js >= 20 (tested on 20.20.1), npm 10
@@ -56,7 +60,7 @@ npm run build && npm start  # http://localhost:3000
 ## Tests
 With the stack running and the DB reset (the test setup runs `npm run seed` itself if the seeded accounts are missing), and the dev server on :3000 (`npm run dev`; the test setup starts one on :3100 if nothing answers):
 ```bash
-npm test          # ~1150 vitest tests against the real local stack (no mocks)
+npm test          # ~1180 vitest tests against the real local stack (no mocks)
 npm run test:tz   # the whole suite under TZ=UTC, Asia/Kuala_Lumpur and America/New_York
 ```
 | folder | what it proves |
