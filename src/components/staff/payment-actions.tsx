@@ -33,14 +33,19 @@ export function PaymentActions({ paymentId, status, amountLabel }: Props) {
 
   async function approve() {
     setApproving(true);
-    const res = await callApi(`/api/payments/${paymentId}/approve`, { method: "POST" });
-    setApproving(false);
-    if (!res.ok) {
-      toast.error(res.error);
-      return;
+    try {
+      const res = await callApi(`/api/payments/${paymentId}/approve`, { method: "POST" });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success(`Payment of ${amountLabel} approved.`);
+      router.refresh();
+    } catch {
+      toast.error("Something went wrong. Please try again.");
+    } finally {
+      setApproving(false);
     }
-    toast.success(`Payment of ${amountLabel} approved.`);
-    router.refresh();
   }
 
   if (status === "pending_verification") {
@@ -118,20 +123,25 @@ function ReasonDialog(p: ReasonDialogProps) {
     setTouched(true);
     if (tooShort) return;
     setBusy(true);
-    const res = await callApi(`/api/payments/${p.paymentId}/${p.action}`, {
-      method: "POST",
-      body: { reason: reason.trim() },
-    });
-    setBusy(false);
-    if (!res.ok) {
-      toast.error(res.error);
-      return;
+    try {
+      const res = await callApi(`/api/payments/${p.paymentId}/${p.action}`, {
+        method: "POST",
+        body: { reason: reason.trim() },
+      });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success(p.successMessage);
+      setOpen(false);
+      setReason("");
+      setTouched(false);
+      router.refresh();
+    } catch {
+      toast.error("Something went wrong. Please try again.");
+    } finally {
+      setBusy(false);
     }
-    toast.success(p.successMessage);
-    setOpen(false);
-    setReason("");
-    setTouched(false);
-    router.refresh();
   }
 
   return (

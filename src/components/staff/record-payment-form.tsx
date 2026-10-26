@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,8 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MYT_OFFSET_MS } from "@/lib/billing";
-import { mytLocalToIso } from "@/lib/dates";
+import { formatInstantMyt, mytLocalToIso } from "@/lib/dates";
 import { formatSen, parseRinggitToSen } from "@/lib/money";
 import { createClient } from "@/lib/supabase/browser";
 import { callApi } from "./api";
@@ -35,11 +34,14 @@ const METHOD_ITEMS: { value: Method; label: string }[] = [
 
 type FieldErrors = { amount?: string; receivedAt?: string; slip?: string };
 
-// "Now" as a datetime-local value in Malaysia time. Computed on the client only (after mount), by shifting
-// the instant by the fixed +08:00 offset, so it never depends on the browser's zone (R52).
+// "Now" as a datetime-local value in Malaysia time. The page computes the initial value on the server and
+// passes it in, so server and client render the same string (no hydration mismatch); the reset after a
+// successful submit uses the same helper.
 function nowInMytLocal(): string {
-  return new Date(Date.now() + MYT_OFFSET_MS).toISOString().slice(0, 16);
+  return formatInstantMyt(new Date()).slice(0, 16);
 }
+
+const SLIP_UPLOAD_ERROR = "Slip upload failed. Use a JPEG, PNG or PDF of at most 5 MB.";
 
 function validateSlip(file: File | null): string | undefined {
   if (!file) return "Attach the bank transfer slip (JPEG, PNG or PDF).";
@@ -48,24 +50,19 @@ function validateSlip(file: File | null): string | undefined {
   return undefined;
 }
 
-type Props = { leaseId: string; orgId: string; isManager: boolean };
+type Props = { leaseId: string; orgId: string; isManager: boolean; defaultReceivedAt: string };
 
-export function RecordPaymentForm({ leaseId, orgId, isManager }: Props) {
+export function RecordPaymentForm({ leaseId, orgId, isManager, defaultReceivedAt }: Props) {
   const router = useRouter();
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<Method>("cash");
-  const [receivedAt, setReceivedAt] = useState("");
+  const [receivedAt, setReceivedAt] = useState(defaultReceivedAt);
   const [file, setFile] = useState<File | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   // D9: one optional Idempotency-Key per form render protects against a double click; a new one after success.
   const keyRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only default avoids a hydration mismatch
-    setReceivedAt(nowInMytLocal());
-  }, []);
 
   function onAmountChange(value: string) {
     setAmount(value);
@@ -110,55 +107,60 @@ export function RecordPaymentForm({ leaseId, orgId, isManager }: Props) {
     const supabase = createClient();
     let slipPath: string | undefined;
 
-    if (method === "bank_transfer" && file) {
-      // R44: path <org_id>/<lease_id>/<uuid>.<ext>; Storage RLS only lets this org's staff upload here.
-      slipPath = `${orgId}/${leaseId}/${crypto.randomUUID()}.${SLIP_EXT[file.type]}`;
-      const { error } = await supabase.storage
-        .from(SLIP_BUCKET)
-        .upload(slipPath, file, { contentType: file.type, upsert: false });
-      if (error) {
-        toast.error(`Slip upload failed: ${error.message}`);
-        setSubmitting(false);
+    try {
+      if (method === "bank_transfer" && file) {
+        // R44: path <org_id>/<lease_id>/<uuid>.<ext>; Storage RLS only lets this org's staff upload here.
+        slipPath = `${orgId}/${leaseId}/${crypto.randomUUID()}.${SLIP_EXT[file.type]}`;
+        const { error } = await supabase.storage
+          .from(SLIP_BUCKET)
+          .upload(slipPath, file, { contentType: file.type, upsert: false });
+        if (error) {
+          // Fixed text: Storage error messages are internal and not for end users.
+          toast.error(SLIP_UPLOAD_ERROR);
+          slipPath = undefined;
+          return;
+        }
+      }
+
+      keyRef.current ??= crypto.randomUUID();
+      const res = await callApi<{ id: string; status: string }>(`/api/leases/${leaseId}/payments`, {
+        method: "POST",
+        headers: { "Idempotency-Key": keyRef.current },
+        body: {
+          amountSen: valid.amountSen,
+          method,
+          receivedAt: valid.receivedAtIso,
+          ...(slipPath ? { slipPath } : {}),
+        },
+      });
+
+      if (!res.ok) {
+        toast.error(res.error);
+        if (slipPath) {
+          // R20: the server removes the orphan slip itself; this is a best-effort second attempt (the
+          // browser role has no DELETE policy, so it may be refused, which is fine).
+          await supabase.storage.from(SLIP_BUCKET).remove([slipPath]).catch(() => undefined);
+        }
         return;
       }
-    }
 
-    keyRef.current ??= crypto.randomUUID();
-    const res = await callApi<{ id: string; status: string }>(`/api/leases/${leaseId}/payments`, {
-      method: "POST",
-      headers: { "Idempotency-Key": keyRef.current },
-      body: {
-        amountSen: valid.amountSen,
-        method,
-        receivedAt: valid.receivedAtIso,
-        ...(slipPath ? { slipPath } : {}),
-      },
-    });
-
-    if (!res.ok) {
-      toast.error(res.error);
-      if (slipPath) {
-        // R20: the server removes the orphan slip itself; this is a best-effort second attempt (the
-        // browser role has no DELETE policy, so it may be refused, which is fine).
-        await supabase.storage.from(SLIP_BUCKET).remove([slipPath]).catch(() => undefined);
-      }
+      toast.success(
+        res.data.status === "approved"
+          ? `Payment of ${formatSen(valid.amountSen)} recorded and approved.`
+          : `Payment of ${formatSen(valid.amountSen)} recorded. It waits for a manager's approval.`,
+      );
+      keyRef.current = null;
+      setAmount("");
+      setFile(null);
+      setErrors({});
+      if (fileRef.current) fileRef.current.value = "";
+      setReceivedAt(nowInMytLocal());
+      router.refresh();
+    } catch {
+      toast.error("Something went wrong. Please try again.");
+    } finally {
       setSubmitting(false);
-      return;
     }
-
-    toast.success(
-      res.data.status === "approved"
-        ? `Payment of ${formatSen(valid.amountSen)} recorded and approved.`
-        : `Payment of ${formatSen(valid.amountSen)} recorded. It waits for a manager's approval.`,
-    );
-    keyRef.current = null;
-    setAmount("");
-    setFile(null);
-    setErrors({});
-    if (fileRef.current) fileRef.current.value = "";
-    setReceivedAt(nowInMytLocal());
-    setSubmitting(false);
-    router.refresh();
   }
 
   return (

@@ -14,25 +14,31 @@ export function ViewSlipButton({ paymentId }: { paymentId: string }) {
     // Open the tab synchronously (inside the click) so popup blockers allow it, then point it at the URL.
     const tab = window.open("about:blank", "_blank");
     if (tab) tab.opener = null;
-    const res = await callApi<{ url?: unknown }>(`/api/payments/${paymentId}/slip`, { method: "GET" });
-    setLoading(false);
-    if (!res.ok) {
+    try {
+      const res = await callApi<{ url?: unknown }>(`/api/payments/${paymentId}/slip`, { method: "GET" });
+      if (!res.ok) {
+        tab?.close();
+        toast.error(res.error);
+        return;
+      }
+      const url = res.data.url;
+      if (typeof url !== "string" || url.length === 0) {
+        tab?.close();
+        toast.error("The server did not return a slip link.");
+        return;
+      }
+      if (tab) {
+        tab.location.href = url;
+      } else {
+        toast.info("Your browser blocked the new tab.", {
+          action: { label: "Open slip", onClick: () => window.open(url, "_blank", "noopener") },
+        });
+      }
+    } catch {
       tab?.close();
-      toast.error(res.error);
-      return;
-    }
-    const url = res.data.url;
-    if (typeof url !== "string" || url.length === 0) {
-      tab?.close();
-      toast.error("The server did not return a slip link.");
-      return;
-    }
-    if (tab) {
-      tab.location.href = url;
-    } else {
-      toast.info("Your browser blocked the new tab.", {
-        action: { label: "Open slip", onClick: () => window.open(url, "_blank", "noopener") },
-      });
+      toast.error("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
     }
   }
 

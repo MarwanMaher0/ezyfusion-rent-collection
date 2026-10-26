@@ -12,14 +12,19 @@ export function SignOutButton() {
 
   async function signOut() {
     setLoading(true);
-    const { error } = await createClient().auth.signOut();
-    if (error) {
-      toast.error(error.message);
+    try {
+      const { error } = await createClient().auth.signOut();
+      if (error) {
+        toast.error(error.message);
+        setLoading(false);
+        return;
+      }
+      router.push("/login");
+      router.refresh();
+    } catch {
+      toast.error("Could not sign out. Please try again.");
       setLoading(false);
-      return;
     }
-    router.push("/login");
-    router.refresh();
   }
 
   return (

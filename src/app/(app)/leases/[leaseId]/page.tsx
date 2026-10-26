@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatMytDisplay, parseInstantWithOffset } from "@/lib/dates";
+import { formatInstantMyt, formatMytDisplay, parseInstantWithOffset } from "@/lib/dates";
 import { ApiError } from "@/lib/errors";
 import { formatSen } from "@/lib/money";
 import { loadCaller } from "@/server/access";
@@ -199,7 +199,12 @@ export default async function LeasePage({ params }: { params: Promise<{ leaseId:
           <CardDescription>Cash or bank transfer received for this lease.</CardDescription>
         </CardHeader>
         <CardContent>
-          <RecordPaymentForm leaseId={lease.id} orgId={orgId} isManager={isManager} />
+          <RecordPaymentForm
+            leaseId={lease.id}
+            orgId={orgId}
+            isManager={isManager}
+            defaultReceivedAt={formatInstantMyt(new Date()).slice(0, 16)}
+          />
         </CardContent>
       </Card>
     </>

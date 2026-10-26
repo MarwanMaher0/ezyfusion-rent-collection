@@ -31,7 +31,11 @@ export default async function PaymentReturnPage({
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) redirect("/login");
+  if (error || !data.user) {
+    // Send the tenant back here after signing in; the login form only follows same-origin paths.
+    const back = `/payments/return${billId ? `?bill_id=${encodeURIComponent(billId)}` : ""}`;
+    redirect(`/login?next=${encodeURIComponent(back)}`);
+  }
 
   let bill: GatewayBillDto | null = null;
   if (billId) {

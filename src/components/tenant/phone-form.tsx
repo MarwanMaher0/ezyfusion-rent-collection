@@ -10,6 +10,9 @@ import { createClient } from "@/lib/supabase/browser";
 // Same shape as the tenants.phone CHECK: optional +, a digit, then 5-19 digits, spaces or dashes (6-20 chars).
 const PHONE_RE = /^\+?[0-9][0-9 -]{5,19}$/;
 
+const PHONE_SAVE_ERROR =
+  "Your phone number could not be saved. Use digits, spaces or dashes, optionally starting with +.";
+
 export function PhoneForm({
   tenantId,
   phone,
@@ -32,20 +35,26 @@ export function PhoneForm({
     }
     setInvalid(null);
     setSaving(true);
-    // R42: the browser writes straight to PostgREST; RLS and the column grant allow only the own row's phone.
-    const { data, error } = await createClient().from("tenants").update({ phone: next }).eq("id", tenantId).select();
-    setSaving(false);
-    if (error) {
-      toast.error(error.message);
-      return;
+    try {
+      // R42: the browser writes straight to PostgREST; RLS and the column grant allow only the own row's phone.
+      const { data, error } = await createClient().from("tenants").update({ phone: next }).eq("id", tenantId).select();
+      if (error) {
+        // Fixed text: PostgREST error messages name constraints and columns and are not for end users.
+        toast.error(PHONE_SAVE_ERROR);
+        return;
+      }
+      if (!data || data.length === 0) {
+        toast.error("Your phone number was not updated");
+        return;
+      }
+      setValue(next);
+      onSaved(next);
+      toast.success("Phone number updated");
+    } catch {
+      toast.error(PHONE_SAVE_ERROR);
+    } finally {
+      setSaving(false);
     }
-    if (!data || data.length === 0) {
-      toast.error("Your phone number was not updated");
-      return;
-    }
-    setValue(next);
-    onSaved(next);
-    toast.success("Phone number updated");
   }
 
   return (
