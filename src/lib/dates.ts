@@ -1,18 +1,15 @@
 // R3/D5/D6: every instant the app shows or accepts is Malaysia time. Malaysia has a fixed +08:00 offset
 // (no DST), so conversions are exact integer shifts and never depend on the machine or browser zone.
-export { toMytDate, addMonthsClamped } from './billing'
+// One copy of the calendar rules: month lengths, leap years and the MYT offset live in billing.ts (pure).
+import { daysInMonth, MYT_OFFSET_MS } from './billing'
 
-const MYT_OFFSET_MS = 8 * 3600 * 1000
+export { toMytDate, addMonthsClamped, daysInMonth, isLeap, MYT_OFFSET_MS } from './billing'
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 const INSTANT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(Z|([+-])(\d{2}):(\d{2}))$/
 const LOCAL_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/
 const YEAR_MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
-
-function daysInMonth(y: number, m: number): number {
-  if (m === 2) return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0 ? 29 : 28
-  return m === 4 || m === 6 || m === 9 || m === 11 ? 30 : 31
-}
 
 function validParts(y: number, mo: number, d: number, h: number, mi: number, s: number): boolean {
   return y >= 1 && mo >= 1 && mo <= 12 && d >= 1 && d <= daysInMonth(y, mo) && h <= 23 && mi <= 59 && s <= 59
@@ -86,5 +83,6 @@ export function formatMytDisplay(d: Date): string {
 }
 
 export function isYearMonth(s: string): boolean {
-  return typeof s === 'string' && YEAR_MONTH_RE.test(s)
+  // Year 0000 does not exist (Postgres reads it as 1 BC), so it is not a valid month (D49).
+  return typeof s === 'string' && YEAR_MONTH_RE.test(s) && !s.startsWith('0000')
 }

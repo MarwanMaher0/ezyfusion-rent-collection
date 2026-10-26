@@ -58,7 +58,12 @@ async function main(): Promise<void> {
   const { recordPayment, approvePayment } = await import('@/server/services/payments')
 
   try {
-    if ((await prisma.organizations.count()) > 0) {
+    // D48: only the brief's own organizations block a re-seed; test fixture orgs (D29) are left alone.
+    const existing = await prisma.organizations.findFirst({
+      where: { name: { in: ['Northwind Properties', 'Beta Realty'] } },
+      select: { id: true },
+    })
+    if (existing) {
       throw new SeedError('Database is not fresh: run npx supabase db reset first')
     }
 

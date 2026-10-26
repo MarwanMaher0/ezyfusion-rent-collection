@@ -6,7 +6,8 @@ import { prisma } from '@/lib/prisma'
 import { loadCaller, requireMember } from '@/server/access'
 import { isoDateToDb, paidByInvoice, serializeInvoice, type ServiceCtx } from './serialize'
 
-const MAX_MONTHS = 120
+// D49: 100 years still bounds generate_series without rejecting any realistic range.
+const MAX_MONTHS = 1200
 
 export type CollectionsRow = { month: string; collectedSen: number }
 

@@ -17,13 +17,13 @@ export type InvoiceStatus = 'paid' | 'partially_paid' | 'unpaid' | 'overdue'
 type Ymd = { y: number; m: number; d: number }
 
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/
-const MYT_OFFSET_MS = 8 * 3600 * 1000
+export const MYT_OFFSET_MS = 8 * 3600 * 1000
 
-function isLeap(y: number): boolean {
+export function isLeap(y: number): boolean {
   return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0
 }
 
-function daysInMonth(y: number, m: number): number {
+export function daysInMonth(y: number, m: number): number {
   if (m === 2) return isLeap(y) ? 29 : 28
   return m === 4 || m === 6 || m === 9 || m === 11 ? 30 : 31
 }
