@@ -21,3 +21,17 @@ export function LeaseListSkeleton() {
     </div>
   );
 }
+
+export function LeaseDetailSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading lease">
+      <Skeleton className="mb-6 h-16" />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Skeleton className="h-24" />
+        <Skeleton className="h-24" />
+        <Skeleton className="h-24" />
+      </div>
+      <Skeleton className="mt-6 h-64" />
+    </div>
+  );
+}

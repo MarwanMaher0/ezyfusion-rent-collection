@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
+import { LeaseDetailSkeleton } from "@/components/staff/skeletons";
 import { PaymentActions } from "@/components/staff/payment-actions";
 import { RecordPaymentForm } from "@/components/staff/record-payment-form";
 import { ViewSlipButton } from "@/components/staff/view-slip-button";
@@ -26,7 +28,7 @@ import {
 import { formatInstantMyt, formatMytDisplay, parseInstantWithOffset } from "@/lib/dates";
 import { ApiError } from "@/lib/errors";
 import { formatSen } from "@/lib/money";
-import { loadCaller } from "@/server/access";
+import { loadCaller, requireLeaseAccess } from "@/server/access";
 import { getUserId } from "@/server/auth";
 import { getLease, listLeases } from "@/server/services/leases";
 
@@ -42,21 +44,50 @@ export default async function LeasePage({ params }: { params: Promise<{ leaseId:
     redirect("/");
   }
 
+  // Access check runs before any JSX is returned, so a 404 is a real 404 and not a 200 already flushed by
+  // Suspense streaming (D72). Other org, other tenant, nonexistent or malformed id all look the same (R38).
+  try {
+    await requireLeaseAccess(caller, leaseId, ["manager", "staff"]);
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 403)) notFound();
+    throw e;
+  }
+
+  return (
+    <Suspense fallback={<LeaseDetailSkeleton />}>
+      <LeaseDetail
+        userId={userId}
+        leaseId={leaseId}
+        isManager={caller.member.role === "manager"}
+        orgId={caller.member.orgId}
+      />
+    </Suspense>
+  );
+}
+
+async function LeaseDetail({
+  userId,
+  leaseId,
+  isManager,
+  orgId,
+}: {
+  userId: string;
+  leaseId: string;
+  isManager: boolean;
+  orgId: string;
+}) {
   const ctx = { userId };
   let detail: Awaited<ReturnType<typeof getLease>>;
   try {
     detail = await getLease(ctx, leaseId);
   } catch (e) {
-    // Other org, other tenant, nonexistent or malformed id all look the same (R38).
     if (e instanceof ApiError && (e.status === 404 || e.status === 403)) notFound();
     throw e;
   }
   const { lease, invoices, payments } = detail;
   const summary = (await listLeases(ctx)).find((l) => l.id === lease.id);
 
-  const isManager = caller.member.role === "manager";
   // A lease the caller can open belongs to the caller's org, so that org is the slip folder (R44).
-  const orgId = caller.member.orgId;
   const totalSen = invoices.reduce((s, i) => s + i.amountSen, 0);
   const paidSen = invoices.reduce((s, i) => s + i.paidSen, 0);
 
