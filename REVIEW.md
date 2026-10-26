@@ -40,7 +40,7 @@ Nothing records that a fee was already charged for an invoice.
 
 ## 8. High — collections are grouped in UTC, not Malaysia time (lines 104, 107)
 `date_trunc('month', received_at)` and `${from}::date` use the database session time zone (UTC), so month boundaries are 08:00 Malaysia time.
-**Scenario:** the seeded bank transfer received 2026-03-01 00:30 MYT is 2026-02-28 16:30 UTC, so it is reported in February. The brief's expected `[300000, 0, 200000]` becomes `[300000, 200000, 0]`. Payments made on the first of `from` before 08:00 MYT are dropped, and payments made on the first of the month after `to` before 08:00 MYT are included.
+**Scenario:** the seeded bank transfer received 2026-03-01 00:30 MYT is 2026-02-28 16:30 UTC, so it is counted in February. For 2026-01..2026-03 the query returns `[{2026-01, 300000}, {2026-02, 200000}]` and no March row, instead of the brief's `[300000, 0, 200000]`. Payments made on the first of `from` before 08:00 MYT are dropped, and payments made on the first of the month after `to` before 08:00 MYT are included.
 **Fix:** `date_trunc('month', received_at AT TIME ZONE 'Asia/Kuala_Lumpur')`, and compare `received_at >= (${from}::date)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur'` (and the same for the upper bound).
 
 ## 9. Medium — months with no payments are missing (lines 108–110)
@@ -57,7 +57,7 @@ The brief requires `received_at = paid_at`.
 **Fix:** parse `paid_at` (`YYYY-MM-DD HH:MM:SS +0800`) into an instant and store it, rejecting a malformed value with 400.
 
 ## 12. Medium — fee invoices get duplicate references, and partial failures are possible (lines 33–46, 50–53)
-Prisma queries are lazy: the `create` calls only run in `Promise.all` on line 46, after every `nextReference` call has already read the same "last" invoice. All fees in one request therefore get the same `INV-n+1`, and two concurrent requests collide as well. If `reference` is unique, `Promise.all` rejects after some creates have succeeded, because there is no transaction: some fees are created and the response is a 500.
+Prisma queries are lazy: the `create` calls only run in `Promise.all` on line 46, after every `nextReference` call has already read the same "last" invoice. All fees in one request therefore get the same `INV-n+1`, and two concurrent requests collide as well. Even a single sequential fee can collide: `orderBy: { createdAt: 'desc' }` picks the latest row, not the highest number, and the invoices a lease creates in one transaction share the same `created_at`, so `findFirst` may return `INV-3` of `INV-1..INV-7` and the fee becomes a second `INV-4`. If `reference` is unique, `Promise.all` rejects after some creates have succeeded, because there is no transaction: some fees are created and the response is a 500.
 **Fix:** generate references from a database sequence (or a per-org counter row updated with `UPDATE … RETURNING`), and create all fees in one `prisma.$transaction`.
 
 ## 13. Medium — an invoice that is 99.5 % paid is treated as paid (line 31)
@@ -70,11 +70,11 @@ Prisma queries are lazy: the `create` calls only run in `Promise.all` on line 46
 **Fix:** `timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(sig, 'hex'))`, after checking that `sig` is 64 hex characters.
 
 ## 15. Low — a fee can round to 0 sen (line 32)
-For an unpaid remainder below 25 sen, `Math.round(unpaid * 2 / 100)` is 0, so the route creates a 0-sen "late fee" invoice (a meaningless row that counts in `created`, and is rejected outright if `amount_sen > 0` is enforced, which fails the request).
+For an unpaid remainder below 25 sen, `Math.round(unpaid * 2 / 100)` is 0. With line 31 as written this only happens on invoices under RM 50 (e.g. a short prorated last period of RM 10.00 with 20 sen unpaid: 0.98 < 0.995, fee = round(0.4) = 0); once item 13 is fixed, any invoice with 1–24 sen unpaid hits it. The route then creates a 0-sen late-fee invoice, or, if `amount_sen > 0` is enforced, the create fails inside `Promise.all` after other fees were already written.
 **Fix:** skip fees that round to 0.
 
-## 16. Low — malformed input becomes a 500 (lines 75, 87, 102–107)
-`BigInt(fields.paid_amount)` throws on a non-numeric value, a non-uuid bill id makes Prisma throw P2023, and a malformed `from`/`to` makes the SQL cast fail. Each ends as a 500 instead of 400 or 404.
+## 16. Low — malformed input becomes a 500 (lines 62, 75, 87, 102–107)
+`BigInt(fields.paid_amount)` throws on a non-numeric value, a non-uuid bill id makes Prisma throw P2023, and a malformed `from`/`to` makes the SQL cast fail. On line 62, `await req.formData()` throws before the signature check when the body is empty, JSON, or has no form content type, so a probe with no `x_signature` gets a 500 instead of the brief's 401. Each ends as a 500 instead of 401, 400 or 404.
 **Fix:** validate with a schema first: `^\d+$` for amounts, a uuid check that answers 404 for unknown bills, and `YYYY-MM` for months.
 
 ## Looks suspicious but is correct
