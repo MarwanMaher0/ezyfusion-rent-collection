@@ -261,8 +261,8 @@ declare
   v_org_id uuid;
   v_pay public.payments;
 begin
-  -- D7: the cap is computed after the lease lock; READ COMMITTED gives each statement a fresh snapshot after the wait
-  -- (approve/reject/void call this helper first, so the guard covers all three).
+  -- D7: READ COMMITTED so the payment re-read after the lease lock wait sees a concurrent decision's
+  -- committed status (approve/reject/void call this helper first, so the guard covers all three).
   if current_setting('transaction_isolation') <> 'read committed' then
     raise exception using errcode = 'P0409', message = 'Unsupported isolation level';
   end if;
@@ -435,7 +435,7 @@ declare
   v_due bigint;
   v_id uuid;
 begin
-  -- D7: the cap is computed after the lease lock; READ COMMITTED gives each statement a fresh snapshot after the wait
+  -- D7: READ COMMITTED so the due amount summed after the lease lock wait sees allocations committed meanwhile
   if current_setting('transaction_isolation') <> 'read committed' then
     raise exception using errcode = 'P0409', message = 'Unsupported isolation level';
   end if;
@@ -508,7 +508,7 @@ declare
   v_bill record;
   v_payment_id uuid;
 begin
-  -- D7: the cap is computed after the lease lock; READ COMMITTED gives each statement a fresh snapshot after the wait
+  -- D7: READ COMMITTED so the re-read after the bill lock wait sees the committed status
   if current_setting('transaction_isolation') <> 'read committed' then
     raise exception using errcode = 'P0409', message = 'Unsupported isolation level';
   end if;

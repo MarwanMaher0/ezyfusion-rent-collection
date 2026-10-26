@@ -185,6 +185,36 @@ describe("R42 catalog: authenticated has only SELECT on the matrix tables + UPDA
   });
 });
 
+// D51: the app never writes through service_role (all writes are Prisma as postgres -> private functions),
+// so a leaked secret key must not be able to write money/tenancy rows through the Data API either.
+describe("R42 catalog: service_role is read-only on public tables (D51)", () => {
+  it("service_role has no INSERT/UPDATE/DELETE/TRUNCATE on any public table (table or column level)", async () => {
+    const rows = await sql<{ relname: string; priv: string }>(
+      `select c.relname, p.priv from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        cross join (values ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) p(priv)
+        where n.nspname = 'public' and c.relkind in ('r','p')
+          and has_table_privilege('service_role', c.oid, p.priv)
+        order by 1, 2`,
+    );
+    expect(rows.map((r) => `${r.relname}:${r.priv}`)).toEqual([]);
+    const cols = await sql<{ relname: string }>(
+      `select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public' and c.relkind in ('r','p')
+          and has_any_column_privilege('service_role', c.oid, 'INSERT,UPDATE')`,
+    );
+    expect(cols.map((r) => r.relname)).toEqual([]);
+  });
+
+  it("service_role still has SELECT on every public table", async () => {
+    const rows = await sql<{ relname: string; ok: boolean }>(
+      `select c.relname, has_table_privilege('service_role', c.oid, 'SELECT') as ok
+         from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public' and c.relkind in ('r','p') order by 1`,
+    );
+    expect(rows.map((r) => `${r.relname}:${r.ok}`)).toEqual(TABLES.map((t) => `${t}:true`));
+  });
+});
+
 describe("R42 catalog: policies", () => {
   it("no INSERT/DELETE/ALL policies; the only UPDATE policy is the tenants own-row phone policy", async () => {
     const rows = await sql<{ tablename: string; policyname: string; cmd: string }>(
@@ -316,18 +346,26 @@ describe("R44 catalog: payment-slips bucket and storage policies", () => {
     expect(rows).toEqual([]);
   });
 
-  it("storage.objects has only INSERT + SELECT policies, to authenticated, scoped to payment-slips via can_upload_slip", async () => {
+  // D50: slips are read only through the server's 60 s signed URL (secret key, path from payments.slip_path).
+  // A client SELECT policy would let staff mint their own long-lived signed URL with their token.
+  it("storage.objects has exactly one policy: INSERT to authenticated, scoped to payment-slips via can_upload_slip (D50)", async () => {
     const rows = await sql<{ policyname: string; cmd: string; roles: string[]; qual: string | null; with_check: string | null }>(
       `select policyname, cmd, roles::text[] as roles, qual, with_check from pg_policies
         where schemaname = 'storage' and tablename = 'objects' order by cmd`,
     );
-    expect(rows.map((r) => r.cmd)).toEqual(["INSERT", "SELECT"]);
-    for (const r of rows) {
-      expect(r.roles).toEqual(["authenticated"]);
-      const expr = r.cmd === "INSERT" ? r.with_check : r.qual;
-      expect(expr).toMatch(/payment-slips/);
-      expect(expr).toMatch(/can_upload_slip/);
-    }
+    expect(rows.map((r) => r.cmd)).toEqual(["INSERT"]);
+    expect(rows[0].roles).toEqual(["authenticated"]);
+    expect(rows[0].with_check).toMatch(/payment-slips/);
+    expect(rows[0].with_check).toMatch(/can_upload_slip/);
+  });
+
+  it("no SELECT or ALL policy on storage.objects mentions payment-slips or applies to every bucket (D50)", async () => {
+    // A policy without a bucket_id filter would also cover payment-slips, so any SELECT/ALL policy counts.
+    const rows = await sql<{ policyname: string; cmd: string; qual: string | null }>(
+      `select policyname, cmd, qual from pg_policies
+        where schemaname = 'storage' and tablename = 'objects' and cmd in ('SELECT','ALL')`,
+    );
+    expect(rows).toEqual([]);
   });
 
   it("no policy on storage.buckets lets a client create or change buckets", async () => {

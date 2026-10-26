@@ -25,3 +25,6 @@ Clock: e = elapsed since 00:48:36Z. Feature freeze at e 3:00 (03:48Z). Logs/subm
 | T15 docs: README, DECISIONS.md Part C answers, WALKTHROUGH, .env.example, ai-logs export, fresh-clone check, push | lead | R53–R55 | 30 min | all | C |
 
 Cut order if late: T12 polish → realtime/bonus → T11 polish (keep lease page + record payment) → slip upload UI (keep server check) → contract-test breadth. Never cut: billing.ts, RLS + catalog test, record_payment lock + cap, webhook state machine + signature, error map, seed, README run steps, fresh-clone check, REVIEW.md, DECISIONS.md.
+
+Full gate extra (D47, Marwan): after `npm run build`, `bash ../scripts/gate.sh step secret-scan -- bash -c "! grep -rlF '<SUPABASE_SECRET_KEY value>' .next/static"` must pass.
+Phase B order (Marwan): T7 (gateway bills + webhook) and T8 (concurrency + webhook tests) finish before the UI lanes (T11, T12) start.

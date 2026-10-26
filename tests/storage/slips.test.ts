@@ -180,17 +180,49 @@ describe("R44 R20 storage upload: only staff/manager of the org, into their own 
   });
 });
 
-describe("R44 storage read: tenants, other orgs and anon cannot read, list or sign", () => {
-  it("staff and manager of org A can download and sign their org's slip (positive control)", async () => {
-    for (const t of [A.tokens.staff, A.tokens.manager]) {
-      const { data, error } = await store(userClient(t)).download(staffPath);
-      expect(error).toBeNull();
-      expect(Buffer.from(await data!.arrayBuffer()).equals(PNG)).toBe(true);
-    }
-    const { data, error } = await store(userClient(A.tokens.staff)).createSignedUrl(staffPath, 60);
+describe("R44 D50 storage read: only a server-minted (secret key) signed URL reads a slip; no client token can read, list or sign", () => {
+  it("a 60 s signed URL created with the secret key serves the exact bytes (positive control: the server's read path)", async () => {
+    const { data, error } = await store(adminClient()).createSignedUrl(staffPath, 60);
     expect(error).toBeNull();
     expect(data?.signedUrl).toBeTruthy();
+    // Staff/manager open the URL the server hands them; their own token is not involved.
+    const res = await fetch(data!.signedUrl);
+    expect(res.status).toBe(200);
+    expect(Buffer.from(await res.arrayBuffer()).equals(PNG)).toBe(true);
   });
+
+  for (const who of ["staff", "manager"] as const) {
+    it(`org A ${who} cannot download its own org's slip with their own token (no SELECT policy)`, async () => {
+      for (const p of [staffPath, managerPath]) {
+        const { data, error } = await store(userClient(A.tokens[who])).download(p);
+        expect({ p, refused: error !== null && data === null }).toEqual({ p, refused: true });
+      }
+    });
+
+    it(`org A ${who} cannot createSignedUrl / createSignedUrls with their own token`, async () => {
+      const c = store(userClient(A.tokens[who]));
+      const one = await c.createSignedUrl(staffPath, 60 * 60 * 24 * 365 * 10);
+      expect(one.error !== null || !one.data?.signedUrl).toBe(true);
+      const many = await c.createSignedUrls([staffPath, managerPath], 60);
+      const urls = (many.data ?? []).map((d) => d.signedUrl).filter(Boolean);
+      expect(urls).toEqual([]);
+    });
+
+    it(`org A ${who} listing its own org/lease folder sees nothing`, async () => {
+      for (const prefix of [A.orgId, `${A.orgId}/${A.lease!.id}`, ""]) {
+        const { data } = await store(userClient(A.tokens[who])).list(prefix);
+        const names = (data ?? []).map((o) => o.name).filter((n) => n.length > 0);
+        expect({ prefix, names }).toEqual({ prefix, names: [] });
+      }
+    });
+
+    it(`org A ${who} still uploads a new slip into their own org folder (upsert false) after D50`, async () => {
+      const p = slipPath(A);
+      const { error } = await upload(userClient(A.tokens[who]), p, PNG, "image/png", false);
+      expect(error).toBeNull();
+      expect(await objectExists(p)).toBe(true);
+    });
+  }
 
   const outsiders = () =>
     [
