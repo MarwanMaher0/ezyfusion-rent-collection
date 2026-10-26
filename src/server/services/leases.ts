@@ -21,8 +21,8 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 const createLeaseSchema = z
   .object({
-    unitId: z.string().uuid(),
-    tenantId: z.string().uuid(),
+    unitId: z.guid(), // D75: any 8-4-4-4-12 hex id; a well-formed id that does not exist is 404, not 400
+    tenantId: z.guid(),
     startDate: z.string().regex(ISO_DATE, 'must be YYYY-MM-DD'),
     endDate: z.string().regex(ISO_DATE, 'must be YYYY-MM-DD'),
     monthlyRentSen: z.number().int().positive(),

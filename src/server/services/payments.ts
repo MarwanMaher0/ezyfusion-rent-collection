@@ -17,7 +17,7 @@ const recordPaymentSchema = z
     amountSen: z.number().int().positive(),
     method: z.enum(['cash', 'bank_transfer']),
     receivedAt: z.string(),
-    slipPath: z.string().min(1).max(512).optional(),
+    slipPath: z.string().min(1).max(512).nullish(), // D75: "slipPath": null is the same as absent
   })
   .strict()
 

@@ -29,8 +29,9 @@ export const POST = route(async (req: Request, { params }: { params: Promise<{ l
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       throw badRequest('Request body must be a JSON object')
     }
-    const header = req.headers.get('idempotency-key')
-    const result = await recordPayment(ctx, leaseId, body, header === null ? undefined : { idempotencyKey: header.trim() })
+    // D75: a blank Idempotency-Key header counts as no key.
+    const header = req.headers.get('idempotency-key')?.trim()
+    const result = await recordPayment(ctx, leaseId, body, header ? { idempotencyKey: header } : undefined)
     return json({ id: result.id, status: result.status }, result.replayed ? 200 : 201)
   } catch (e) {
     await cleanupRejectedSlip(ctx, text)

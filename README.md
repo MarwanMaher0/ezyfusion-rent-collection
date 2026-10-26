@@ -12,7 +12,7 @@ Stack: Next.js 16 (App Router) + TypeScript, local Supabase (Postgres, Auth, Sto
   - RLS and grants that match the brief's Data API matrix; the private `payment-slips` bucket.
   - Seeding through the app's own services.
   - Staff/manager UI (dashboard, leases, lease page, record payment with slip upload, approve/reject/void) and the tenant portal (Pay now, phone edit, read-only `/payments/return`).
-  - Bonus: a manager create-lease form with a live schedule preview, unit tests for `billing.ts` and for allocation, and a server-side `?q=` search on the leases list.
+  - Bonus: realtime updates on the tenant portal (Supabase Realtime on `payments` and `gateway_bills`, filtered by RLS), a manager create-lease form with a live schedule preview, unit tests for `billing.ts` and for allocation, and server-side search plus pagination on the leases list, synced with the URL (`?q=&page=&pageSize=`).
   - About 1180 tests, which pass under three timezones.
 - **Skipped / limits:** see [Known issues](#known-issues--skipped).
 - **AI logs (`ai-logs/`):**
@@ -95,7 +95,7 @@ More: `DECISIONS.md` (Part C answers + decision log), `REVIEW.md` (Part B), `doc
 - `npm run seed` says the database is not fresh: run `npx supabase db reset` first.
 
 ## Known issues / skipped
-- **Bonus items skipped:** realtime updates on the tenant portal (the return page has a "Refresh status" button instead) and pagination of the leases list (there is a server-side `?q=` search only).
+- **Bonus items:** all four were built; nothing from the bonus list was skipped.
 - **Slip cleanup edge cases (R20):** a failed recording deletes the uploaded slip when the request reaches the server and names it. Two narrow cases can still leave an unreferenced file in the organization's own folder: the network drops between the upload and the POST, or the POST body is not valid JSON so the path cannot be read. A second, concurrent request reusing the same slip path can also delete a slip that a not-yet-committed recording uses (D46). A periodic sweeper (delete objects older than N minutes that no `payments.slip_path` references) would close all three.
 - **UI checks:** no browser automation was used. The UI was reviewed from the code and with HTTP requests as every role. Hydration-safety rules: Malaysia time is formatted by hand, with no `Intl`, and "now"-dependent values are computed after mount or passed from the server.
 - **Credit after a void:** when a void reopens invoices, unapplied online money on other payments is not re-applied automatically (D14, Part C question 5).
@@ -103,6 +103,5 @@ More: `DECISIONS.md` (Part C answers + decision log), `REVIEW.md` (Part B), `doc
 
 ## What I would do next
 - A slip sweeper job, and an explicit, audited "apply credit" action for unapplied online money.
-- Realtime (Supabase channel on `payments` for the tenant's leases) and pagination on the leases list.
 - Playwright tests for the UI flows in two browser timezones, plus hydration-warning checks.
 - Late fees, if the business wants them, as one locked plpgsql function with a UNIQUE (invoice) constraint (see REVIEW.md for what goes wrong otherwise).

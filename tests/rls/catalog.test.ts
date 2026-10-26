@@ -346,24 +346,27 @@ describe("R44 catalog: payment-slips bucket and storage policies", () => {
     expect(rows).toEqual([]);
   });
 
-  // D50: slips are read only through the server's 60 s signed URL (secret key, path from payments.slip_path).
-  // A client SELECT policy would let staff mint their own long-lived signed URL with their token.
-  it("storage.objects has exactly one policy: INSERT to authenticated, scoped to payment-slips via can_upload_slip (D50)", async () => {
+  // D74 (supersedes D50): staff/manager of the slip's org may read with their own token (short-lived
+  // signed URLs); both policies share the same scope helper, and there is still no UPDATE/DELETE/ALL.
+  it("storage.objects has exactly two policies: INSERT and SELECT to authenticated, both via can_upload_slip (D74)", async () => {
     const rows = await sql<{ policyname: string; cmd: string; roles: string[]; qual: string | null; with_check: string | null }>(
       `select policyname, cmd, roles::text[] as roles, qual, with_check from pg_policies
         where schemaname = 'storage' and tablename = 'objects' order by cmd`,
     );
-    expect(rows.map((r) => r.cmd)).toEqual(["INSERT"]);
-    expect(rows[0].roles).toEqual(["authenticated"]);
-    expect(rows[0].with_check).toMatch(/payment-slips/);
-    expect(rows[0].with_check).toMatch(/can_upload_slip/);
+    expect(rows.map((r) => r.cmd)).toEqual(["INSERT", "SELECT"]);
+    for (const r of rows) expect(r.roles).toEqual(["authenticated"]);
+    const ins = rows.find((r) => r.cmd === "INSERT")!;
+    expect(ins.with_check).toMatch(/payment-slips/);
+    expect(ins.with_check).toMatch(/can_upload_slip/);
+    const sel = rows.find((r) => r.cmd === "SELECT")!;
+    expect(sel.qual).toMatch(/payment-slips/);
+    expect(sel.qual).toMatch(/can_upload_slip\(name\)/);
   });
 
-  it("no SELECT or ALL policy on storage.objects mentions payment-slips or applies to every bucket (D50)", async () => {
-    // A policy without a bucket_id filter would also cover payment-slips, so any SELECT/ALL policy counts.
-    const rows = await sql<{ policyname: string; cmd: string; qual: string | null }>(
-      `select policyname, cmd, qual from pg_policies
-        where schemaname = 'storage' and tablename = 'objects' and cmd in ('SELECT','ALL')`,
+  it("no UPDATE, DELETE or ALL policy on storage.objects (slips are immutable to clients) (D74)", async () => {
+    const rows = await sql<{ policyname: string; cmd: string }>(
+      `select policyname, cmd from pg_policies
+        where schemaname = 'storage' and tablename = 'objects' and cmd in ('UPDATE','DELETE','ALL')`,
     );
     expect(rows).toEqual([]);
   });
